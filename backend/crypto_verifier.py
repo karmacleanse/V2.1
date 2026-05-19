@@ -128,3 +128,70 @@ def verify_usdc_payment(tx_hash: str, expected_tier: str) -> dict:
     except Exception as e:
         logger.error(f"Crypto verification error: {str(e)}")
         return {'valid': False, 'error': f'Verification failed: {str(e)}'}
+
+
+def find_recent_usdc_payment(expected_tier: str, since_block: int = None) -> dict:
+    """
+    Search recent USDC Transfer events to the recipient for the expected amount.
+    Used for QR-code (no tx_hash) payment detection.
+    
+    Returns the most recent matching tx_hash, or None.
+    """
+    if not CRYPTO_RECIPIENT_ADDRESS:
+        return {'found': False}
+    
+    if expected_tier not in CRYPTO_PRICING:
+        return {'found': False, 'error': 'Invalid tier'}
+    
+    expected_amount = CRYPTO_PRICING[expected_tier]
+    expected_amount_raw = int(expected_amount * (10 ** USDC_DECIMALS))
+    
+    try:
+        w3 = get_web3()
+        
+        latest_block = w3.eth.block_number
+        if since_block is None:
+            # Default: last ~5 minutes (Polygon ~2s/block = 150 blocks)
+            since_block = max(0, latest_block - 200)
+        
+        # Cap range to avoid timeout (max 500 blocks per query)
+        from_block = max(since_block, latest_block - 500)
+        
+        # Build filter for Transfer events to our address
+        recipient_padded = '0x' + CRYPTO_RECIPIENT_ADDRESS.lower().replace('0x', '').rjust(64, '0')
+        
+        logs = w3.eth.get_logs({
+            'fromBlock': from_block,
+            'toBlock': latest_block,
+            'address': USDC_CONTRACT_ADDRESS,
+            'topics': [
+                TRANSFER_EVENT_SIGNATURE,
+                None,  # from (any)
+                recipient_padded,  # to (us)
+            ]
+        })
+        
+        # Iterate from newest to oldest
+        for log in reversed(logs):
+            amount_raw = int(log['data'].hex(), 16) if hasattr(log['data'], 'hex') else int(log['data'], 16)
+            
+            # Match amount (allow exact or slightly more)
+            if amount_raw >= expected_amount_raw and amount_raw < expected_amount_raw * 2:
+                tx_hash = log['transactionHash'].hex()
+                if not tx_hash.startswith('0x'):
+                    tx_hash = '0x' + tx_hash
+                from_address = '0x' + log['topics'][1].hex().replace('0x', '')[-40:]
+                
+                return {
+                    'found': True,
+                    'tx_hash': tx_hash,
+                    'amount_usdc': amount_raw / (10 ** USDC_DECIMALS),
+                    'sender': from_address,
+                    'block_number': log['blockNumber'],
+                }
+        
+        return {'found': False, 'latest_block': latest_block}
+        
+    except Exception as e:
+        logger.error(f"Find recent USDC error: {e}")
+        return {'found': False, 'error': str(e)}

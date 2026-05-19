@@ -13,11 +13,12 @@ import uuid as uuid_lib
 
 from models import (
     Certificate, CertificateCreate, AnalyzeRequest, 
-    CheckoutRequest, DeliveryRequest, PaymentTransaction, CryptoPaymentRequest
+    CheckoutRequest, DeliveryRequest, PaymentTransaction, CryptoPaymentRequest,
+    CryptoPollRequest
 )
 from severity_analyzer import analyze_severity
 from registry_id_generator import generate_registry_id
-from crypto_verifier import verify_usdc_payment, CRYPTO_PRICING, CRYPTO_RECIPIENT_ADDRESS, POLYGON_CHAIN_ID, USDC_CONTRACT_ADDRESS
+from crypto_verifier import verify_usdc_payment, find_recent_usdc_payment, CRYPTO_PRICING, CRYPTO_RECIPIENT_ADDRESS, POLYGON_CHAIN_ID, USDC_CONTRACT_ADDRESS
 from polar_payment import (
     create_polar_checkout, verify_polar_webhook, POLAR_PRODUCTS, POLAR_PRICING
 )
@@ -419,6 +420,85 @@ async def polar_webhook(request: Request):
                 )
     
     return {'received': True}
+
+
+@api_router.post("/crypto/poll")
+async def crypto_poll(request: CryptoPollRequest):
+    """
+    Poll for incoming USDC payments to recipient (for QR-based mobile flow).
+    Checks blocks since timestamp for matching amount.
+    """
+    # Verify certificate exists
+    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    # Check if cert was already paid (e.g. by browser wallet during polling)
+    if cert.get('tier') == 'paid':
+        # Find associated tx
+        tx_record = await db.payment_transactions.find_one(
+            {'certificate_uuid': request.certificate_uuid, 'payment_status': 'paid'},
+            {'_id': 0}
+        )
+        return {
+            'detected': True,
+            'tx_hash': tx_record.get('tx_hash', '') if tx_record else '',
+            'already_paid': True,
+        }
+    
+    # Search recent USDC transfers to our address matching this tier amount
+    result = find_recent_usdc_payment(request.tier)
+    
+    if not result.get('found'):
+        return {'detected': False}
+    
+    tx_hash = result['tx_hash']
+    
+    # Check if this tx was already claimed by another certificate (anti-fraud)
+    existing_claim = await db.payment_transactions.find_one({'tx_hash': tx_hash}, {'_id': 0})
+    if existing_claim and existing_claim.get('certificate_uuid') != request.certificate_uuid:
+        # This tx was used for another certificate, not ours
+        return {'detected': False, 'reason': 'tx_claimed_by_other'}
+    
+    # Verify and upgrade cert
+    verification = verify_usdc_payment(tx_hash, request.tier)
+    if not verification['valid']:
+        return {'detected': False, 'reason': verification.get('error')}
+    
+    # Record transaction
+    if not existing_claim:
+        transaction = {
+            'session_id': f"crypto_qr_{tx_hash[:16]}",
+            'tx_hash': tx_hash,
+            'certificate_uuid': request.certificate_uuid,
+            'amount': verification['amount_usdc'],
+            'currency': 'USDC',
+            'sender_address': verification.get('sender'),
+            'payment_method': 'crypto_polygon_qr',
+            'status': 'complete',
+            'payment_status': 'paid',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+        }
+        await db.payment_transactions.insert_one(transaction)
+    
+    # Upgrade certificate
+    await db.certificates.update_one(
+        {'uuid': request.certificate_uuid},
+        {'$set': {
+            'tier': 'paid',
+            'status': 'certified',
+            'payment_amount': verification['amount_usdc'],
+            'payment_method': 'crypto_polygon_qr',
+        }}
+    )
+    
+    logger.info(f"Certificate {request.certificate_uuid} upgraded via QR crypto payment (tx: {tx_hash})")
+    
+    return {
+        'detected': True,
+        'tx_hash': tx_hash,
+        'amount_usdc': verification['amount_usdc'],
+    }
 
 
 @api_router.get("/crypto/config")

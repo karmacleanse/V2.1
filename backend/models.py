@@ -47,6 +47,11 @@ class CryptoPaymentRequest(BaseModel):
     tx_hash: str
     sender_address: Optional[str] = None
 
+class CryptoPollRequest(BaseModel):
+    tier: str
+    certificate_uuid: str
+    since_timestamp: int  # Unix timestamp when QR was shown
+
 class DeliveryRequest(BaseModel):
     certificate_uuid: str
     recipient_email: EmailStr
