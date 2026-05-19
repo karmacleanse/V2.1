@@ -62,6 +62,17 @@
 }
 
 @layer base {
+    input, textarea {
+        caret-color: #0A0A0A;
+    }
+    
+    input:focus, textarea:focus {
+        outline: none;
+        caret-color: #D92D20;
+    }
+}
+
+@layer base {
     [data-debug-wrapper="true"] {
         display: contents !important;
     }

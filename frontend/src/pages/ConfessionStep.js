@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import useRitualStore from '../store/ritualStore';
 
 const placeholders = [
@@ -55,29 +55,20 @@ const ConfessionStep = () => {
         Describe the imbalance requiring correction.
       </p>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={placeholderIdx}
-          initial={{ opacity: 0.5 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0.5 }}
-        >
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={placeholders[placeholderIdx]}
-            rows={6}
-            maxLength={500}
-            className="w-full border-2 px-4 py-3 text-base mb-2 resize-none focus:outline-none font-mono"
-            style={{
-              background: '#F4F4F0',
-              borderColor: '#0A0A0A',
-              color: '#0A0A0A',
-            }}
-            data-testid="confession-textarea"
-          />
-        </motion.div>
-      </AnimatePresence>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={placeholders[placeholderIdx]}
+        rows={6}
+        maxLength={500}
+        className="w-full border-2 px-4 py-3 text-base mb-2 resize-none focus:outline-none font-mono"
+        style={{
+          background: '#F4F4F0',
+          borderColor: '#0A0A0A',
+          color: '#0A0A0A',
+        }}
+        data-testid="confession-textarea"
+      />
 
       <p
         className="text-xs mb-4 text-right font-mono"
