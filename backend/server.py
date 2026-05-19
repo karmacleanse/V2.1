@@ -18,6 +18,9 @@ from models import (
 from severity_analyzer import analyze_severity
 from registry_id_generator import generate_registry_id
 from crypto_verifier import verify_usdc_payment, CRYPTO_PRICING, CRYPTO_RECIPIENT_ADDRESS, POLYGON_CHAIN_ID, USDC_CONTRACT_ADDRESS
+from polar_payment import (
+    create_polar_checkout, verify_polar_webhook, POLAR_PRODUCTS, POLAR_PRICING
+)
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse
 )
@@ -293,6 +296,129 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
     except Exception as e:
         logger.error(f"Webhook error: {str(e)}")
         raise HTTPException(status_code=400, detail="Webhook processing failed")
+
+
+@api_router.post("/polar/checkout")
+async def polar_checkout_endpoint(request: CheckoutRequest):
+    """Create Polar.sh checkout session for paid tier"""
+    if request.tier not in POLAR_PRODUCTS:
+        raise HTTPException(status_code=400, detail="Invalid tier")
+    
+    # Verify certificate exists
+    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    try:
+        result = await create_polar_checkout(
+            tier=request.tier,
+            certificate_uuid=request.certificate_uuid,
+            origin_url=request.origin_url,
+        )
+        
+        # Record transaction
+        transaction = {
+            'session_id': result['checkout_id'],
+            'certificate_uuid': request.certificate_uuid,
+            'amount': POLAR_PRICING[request.tier],
+            'currency': 'usd',
+            'tier': request.tier,
+            'payment_method': 'polar_card',
+            'status': 'pending',
+            'payment_status': 'unpaid',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+        }
+        await db.payment_transactions.insert_one(transaction)
+        
+        return {'url': result['url'], 'session_id': result['checkout_id']}
+        
+    except Exception as e:
+        logger.error(f"Polar checkout error: {e}")
+        raise HTTPException(status_code=500, detail=f"Checkout creation failed: {str(e)}")
+
+
+@api_router.get("/polar/status/{checkout_id}")
+async def polar_status(checkout_id: str):
+    """Check Polar payment status (used after redirect from Polar checkout)"""
+    transaction = await db.payment_transactions.find_one({'session_id': checkout_id}, {'_id': 0})
+    
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    return {
+        'status': transaction.get('status', 'pending'),
+        'payment_status': transaction.get('payment_status', 'unpaid'),
+        'certificate_uuid': transaction['certificate_uuid'],
+    }
+
+
+@api_router.post("/webhooks/polar")
+async def polar_webhook(request: Request):
+    """Handle Polar webhook events (order.paid, etc.)"""
+    raw_body = await request.body()
+    headers = dict(request.headers)
+    
+    try:
+        event = verify_polar_webhook(raw_body, headers)
+    except Exception as e:
+        logger.error(f"Polar webhook verification failed: {e}")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+    
+    event_type = event.get('type') if isinstance(event, dict) else getattr(event, 'type', None)
+    data = event.get('data') if isinstance(event, dict) else getattr(event, 'data', None)
+    
+    if hasattr(data, 'model_dump'):
+        data = data.model_dump()
+    
+    logger.info(f"Polar webhook: {event_type}")
+    
+    # Idempotency: prevent duplicate processing
+    webhook_id = headers.get('webhook-id')
+    if webhook_id:
+        existing = await db.processed_webhooks.find_one({'_id': webhook_id})
+        if existing:
+            logger.info(f"Webhook {webhook_id} already processed")
+            return {'received': True, 'duplicate': True}
+        await db.processed_webhooks.insert_one({
+            '_id': webhook_id,
+            'event_type': event_type,
+            'processed_at': datetime.now(timezone.utc).isoformat(),
+        })
+    
+    # Handle order.paid
+    if event_type == 'order.paid' or event_type == 'order.created':
+        metadata = data.get('metadata', {}) if data else {}
+        cert_uuid = metadata.get('certificate_uuid')
+        checkout_id = data.get('checkout_id') if data else None
+        order_id = data.get('id') if data else None
+        amount = (data.get('amount', 0) / 100.0) if data else 0  # Polar uses cents
+        
+        if cert_uuid:
+            cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
+            if cert and cert['tier'] == 'free':
+                await db.certificates.update_one(
+                    {'uuid': cert_uuid},
+                    {'$set': {
+                        'tier': 'paid',
+                        'status': 'certified',
+                        'payment_amount': amount,
+                        'payment_method': 'polar_card',
+                    }}
+                )
+                logger.info(f"Certificate {cert_uuid} upgraded via Polar webhook")
+            
+            # Update transaction
+            if checkout_id:
+                await db.payment_transactions.update_one(
+                    {'session_id': checkout_id},
+                    {'$set': {
+                        'status': 'complete',
+                        'payment_status': 'paid',
+                        'polar_order_id': order_id,
+                    }}
+                )
+    
+    return {'received': True}
 
 
 @api_router.get("/crypto/config")

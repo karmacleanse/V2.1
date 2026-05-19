@@ -80,7 +80,7 @@ const ProtocolSelection = () => {
     setLoading(true);
     try {
       const originUrl = window.location.origin;
-      const response = await axios.post(`${API}/checkout/session`, {
+      const response = await axios.post(`${API}/polar/checkout`, {
         tier: tier.tier_key,
         certificate_uuid: certificateUuid,
         origin_url: originUrl,
@@ -93,7 +93,7 @@ const ProtocolSelection = () => {
       }
     } catch (error) {
       console.error('Payment initiation failed:', error);
-      alert('Payment initiation failed. Please try again or use crypto.');
+      alert('Payment initiation failed. Please try crypto or try again.');
       setLoading(false);
     }
   };
@@ -200,7 +200,7 @@ const ProtocolSelection = () => {
                     }}
                     data-testid={`select-${tier.id}-btn`}
                   >
-                    {loading ? 'Processing...' : `Pay Card`}
+                    {loading ? 'Processing...' : `Pay Card ${tier.price}`}
                   </button>
                   <button
                     onClick={() => handleCryptoPayment(tier)}

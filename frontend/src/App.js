@@ -25,13 +25,40 @@ const Funnel = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const success = params.get('success');
+    const polarSuccess = params.get('polar_success');
     const sessionId = params.get('session_id');
+    const checkoutId = params.get('checkout_id');
 
     if (success === 'true' && sessionId) {
-      // Poll payment status
+      // Stripe success
       pollPaymentStatus(sessionId);
+    } else if (polarSuccess === 'true' && checkoutId) {
+      // Polar success
+      pollPolarStatus(checkoutId);
     }
   }, [location]);
+
+  const pollPolarStatus = async (checkoutId, attempts = 0) => {
+    const maxAttempts = 15;
+    if (attempts >= maxAttempts) {
+      alert('Payment confirmation pending. Refresh page in a minute.');
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API}/polar/status/${checkoutId}`);
+
+      if (response.data.payment_status === 'paid') {
+        setStep('certificate');
+        navigate('/', { replace: true });
+      } else {
+        setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), 2000);
+      }
+    } catch (error) {
+      console.error('Error checking Polar status:', error);
+      setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), 2000);
+    }
+  };
 
   const pollPaymentStatus = async (sessionId, attempts = 0) => {
     const maxAttempts = 10;
