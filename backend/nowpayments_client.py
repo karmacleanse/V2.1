@@ -75,8 +75,13 @@ async def create_invoice(tier: str, certificate_uuid: str, origin_url: str, back
         if not invoice_id or not invoice_url:
             raise RuntimeError(f"Invalid invoice response: {data}")
         
+        # Add default pay currency so user lands on USDT TRC-20 (min ~$1, low fee)
+        # instead of BTC which requires ~$50+ minimum
+        separator = '&' if '?' in invoice_url else '?'
+        invoice_url_with_currency = f"{invoice_url}{separator}payCurrency={NOWPAYMENTS_PAYOUT_CURRENCY}"
+        
         return {
-            "invoice_url": invoice_url,
+            "invoice_url": invoice_url_with_currency,
             "invoice_id": str(invoice_id),
             "amount_usd": price_usd,
         }
