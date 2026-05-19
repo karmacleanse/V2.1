@@ -6,7 +6,11 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const SeverityResult = () => {
-  const { severity, confession, name, setCertificate, setStep } = useRitualStore();
+  const severity = useRitualStore((state) => state.severity);
+  const confession = useRitualStore((state) => state.confession);
+  const name = useRitualStore((state) => state.name);
+  const setCertificate = useRitualStore((state) => state.setCertificate);
+  const setStep = useRitualStore((state) => state.setStep);
 
   const handleContinue = async () => {
     // Create certificate

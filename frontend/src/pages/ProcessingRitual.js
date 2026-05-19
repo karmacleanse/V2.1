@@ -31,7 +31,9 @@ const ProcessingRitual = () => {
   const [currentText, setCurrentText] = useState('');
   const [showWarning, setShowWarning] = useState(false);
   const [progress, setProgress] = useState(0);
-  const { confession, setSeverity, setStep } = useRitualStore();
+  const confession = useRitualStore((state) => state.confession);
+  const setSeverity = useRitualStore((state) => state.setSeverity);
+  const setStep = useRitualStore((state) => state.setStep);
 
   useEffect(() => {
     const runSequence = async () => {

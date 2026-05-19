@@ -62,7 +62,8 @@ const tiers = [
 
 const ProtocolSelection = () => {
   const [loading, setLoading] = useState(false);
-  const { certificateUuid, setStep } = useRitualStore();
+  const certificateUuid = useRitualStore((state) => state.certificateUuid);
+  const setStep = useRitualStore((state) => state.setStep);
 
   const handleSelect = async (tier) => {
     if (tier.id === 'free') {

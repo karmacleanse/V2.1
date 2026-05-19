@@ -17,9 +17,9 @@ const API = `${BACKEND_URL}/api`;
 // Main funnel controller
 const Funnel = () => {
   const step = useRitualStore((state) => state.step);
+  const setStep = useRitualStore((state) => state.setStep);
   const location = useLocation();
   const navigate = useNavigate();
-  const { setStep, setCertificate } = useRitualStore();
 
   // Handle payment return
   useEffect(() => {
@@ -97,30 +97,161 @@ const VerificationPage = () => {
   const { registryId } = useParams();
   const [certificate, setCertificate] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Fetch certificate by registry ID
-    // This would need a backend endpoint to look up by registry_id
-    // For now, simplified
-    setLoading(false);
+    const fetchCert = async () => {
+      try {
+        const response = await axios.get(`${API}/verify/${registryId}`);
+        setCertificate(response.data);
+      } catch (err) {
+        setError(err.response?.status === 404 ? 'Certificate not found' : 'Verification failed');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCert();
   }, [registryId]);
+
+  const getSeverityColor = (severityClass) => {
+    switch (severityClass) {
+      case 'Critical': return '#D92D20';
+      case 'High': return '#B45309';
+      case 'Moderate': return '#525252';
+      default: return '#15803D';
+    }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center font-mono">Loading verification...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#F4F4F0' }}>
+        <div className="font-mono text-sm" style={{ color: '#525252' }}>
+          Loading verification...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: '#F4F4F0' }}>
+        <div className="max-w-md w-full border-2 p-8" style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }}>
+          <div className="text-center">
+            <div className="inline-block px-6 py-3 border-2 transform -rotate-3 mb-4"
+              style={{ borderColor: '#D92D20', color: '#D92D20' }}>
+              <span className="text-lg font-black uppercase tracking-widest" style={{ fontFamily: 'Chivo, sans-serif' }}>
+                INVALID
+              </span>
+            </div>
+            <h2 className="text-2xl font-bold uppercase mb-2" style={{ fontFamily: 'Chivo, sans-serif' }}>
+              Verification Failed
+            </h2>
+            <p className="text-sm font-mono" style={{ color: '#525252' }}>
+              {error}: {registryId}
+            </p>
+            <p className="text-xs font-mono mt-4" style={{ color: '#737373' }}>
+              This certificate is not registered in the Karma Cleanse archive.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full border-2 p-8 bg-white">
-        <h1 className="text-3xl font-black uppercase mb-4">
-          Certificate Verification
+    <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: '#F4F4F0' }}>
+      <div className="max-w-2xl w-full border-2 p-8" style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }} data-testid="verification-page">
+        {/* Stamp */}
+        <div className="text-center mb-6">
+          <div className="inline-block px-6 py-3 border-2 transform -rotate-3"
+            style={{ borderColor: '#15803D', color: '#15803D' }}>
+            <span className="text-lg font-black uppercase tracking-widest" style={{ fontFamily: 'Chivo, sans-serif' }}>
+              VERIFIED
+            </span>
+          </div>
+        </div>
+
+        <h1 className="text-3xl font-black uppercase tracking-tight mb-2" style={{ fontFamily: 'Chivo, sans-serif' }}>
+          Karma Cleanse
         </h1>
-        <p className="font-mono">Registry ID: {registryId}</p>
-        {/* Display certificate details */}
+        <div className="text-xs uppercase tracking-widest mb-6" style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}>
+          Official Registry Verification
+        </div>
+
+        <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+          <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+            Registry ID
+          </div>
+          <div className="text-2xl font-black tracking-tight" style={{ fontFamily: 'Chivo, sans-serif' }}>
+            {certificate.registry_id}
+          </div>
+        </div>
+
+        <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+          <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+            Subject
+          </div>
+          <div className="text-base font-mono">{certificate.name || 'Anonymous Entity'}</div>
+        </div>
+
+        <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+          <div className="text-xs uppercase font-bold tracking-widest mb-2" style={{ color: '#737373' }}>
+            Classification
+          </div>
+          <div className="inline-block px-4 py-2 border-2"
+            style={{ borderColor: getSeverityColor(certificate.severity_class), color: getSeverityColor(certificate.severity_class) }}>
+            <span className="text-lg font-black uppercase tracking-wider" style={{ fontFamily: 'Chivo, sans-serif' }}>
+              CLASS {certificate.severity_class.toUpperCase()}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+          <div>
+            <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+              Stability
+            </div>
+            <div className="text-sm font-mono">{certificate.stability}</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+              Risk Score
+            </div>
+            <div className="text-sm font-mono">{certificate.risk_score}/100</div>
+          </div>
+        </div>
+
+        <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+          <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+            Protocol Applied
+          </div>
+          <div className="text-sm font-mono">{certificate.protocol}</div>
+        </div>
+
+        <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+          <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+            Status
+          </div>
+          <div className="text-sm font-mono uppercase font-bold"
+            style={{ color: certificate.tier === 'paid' ? '#15803D' : '#B45309' }}>
+            {certificate.status} — {certificate.tier} tier
+          </div>
+        </div>
+
+        <div className="border-t-2 pt-4" style={{ borderColor: '#E5E5DF' }}>
+          <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+            Issued
+          </div>
+          <div className="text-sm font-mono">
+            {new Date(certificate.created_at).toLocaleString()}
+          </div>
+        </div>
+
+        <p className="text-xs text-center mt-6 font-mono" style={{ color: '#737373' }}>
+          This certificate is authentic and registered in the Karma Cleanse archive.
+          <br />
+          Emotional bureaucracy since 2026.
+        </p>
       </div>
     </div>
   );

@@ -4,7 +4,9 @@ import useRitualStore from '../store/ritualStore';
 
 const IdentityStep = () => {
   const [input, setInput] = useState('');
-  const { setName, setAnonymous, setStep } = useRitualStore();
+  const setName = useRitualStore((state) => state.setName);
+  const setAnonymous = useRitualStore((state) => state.setAnonymous);
+  const setStep = useRitualStore((state) => state.setStep);
 
   const handleSubmit = () => {
     if (input.trim()) {

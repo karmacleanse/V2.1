@@ -16,7 +16,8 @@ const placeholders = [
 const ConfessionStep = () => {
   const [text, setText] = useState('');
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
-  const { setConfession, setStep } = useRitualStore();
+  const setConfession = useRitualStore((state) => state.setConfession);
+  const setStep = useRitualStore((state) => state.setStep);
 
   useEffect(() => {
     const interval = setInterval(() => {

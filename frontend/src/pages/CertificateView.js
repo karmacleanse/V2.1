@@ -5,7 +5,11 @@ import axios from 'axios';
 import useRitualStore from '../store/ritualStore';
 
 const CertificateView = () => {
-  const { registryId, name, severity, tier, status } = useRitualStore();
+  const registryId = useRitualStore((state) => state.registryId);
+  const name = useRitualStore((state) => state.name);
+  const severity = useRitualStore((state) => state.severity);
+  const tier = useRitualStore((state) => state.tier);
+  const status = useRitualStore((state) => state.status);
   const [showDelivery, setShowDelivery] = useState(false);
 
   const verificationUrl = `${window.location.origin}/verify/${registryId}`;
@@ -288,7 +292,7 @@ const DeliveryForm = () => {
   const [message, setMessage] = useState('');
   const [hours, setHours] = useState(24);
   const [submitted, setSubmitted] = useState(false);
-  const { certificateUuid } = useRitualStore();
+  const certificateUuid = useRitualStore((state) => state.certificateUuid);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
