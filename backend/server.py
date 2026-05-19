@@ -13,10 +13,11 @@ import uuid as uuid_lib
 
 from models import (
     Certificate, CertificateCreate, AnalyzeRequest, 
-    CheckoutRequest, DeliveryRequest, PaymentTransaction
+    CheckoutRequest, DeliveryRequest, PaymentTransaction, CryptoPaymentRequest
 )
 from severity_analyzer import analyze_severity
 from registry_id_generator import generate_registry_id
+from crypto_verifier import verify_usdc_payment, CRYPTO_PRICING, CRYPTO_RECIPIENT_ADDRESS, POLYGON_CHAIN_ID, USDC_CONTRACT_ADDRESS
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse
 )
@@ -292,6 +293,90 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
     except Exception as e:
         logger.error(f"Webhook error: {str(e)}")
         raise HTTPException(status_code=400, detail="Webhook processing failed")
+
+
+@api_router.get("/crypto/config")
+async def get_crypto_config():
+    """Return crypto payment configuration for frontend"""
+    return {
+        'recipient_address': CRYPTO_RECIPIENT_ADDRESS,
+        'usdc_contract': USDC_CONTRACT_ADDRESS,
+        'chain_id': POLYGON_CHAIN_ID,
+        'chain_name': 'Polygon',
+        'pricing': CRYPTO_PRICING,
+        'currency': 'USDC',
+        'decimals': 6,
+    }
+
+
+@api_router.post("/crypto/verify")
+async def verify_crypto_payment(request: CryptoPaymentRequest):
+    """
+    Verify on-chain USDC payment and upgrade certificate.
+    Frontend submits tx_hash after user confirms in MetaMask.
+    """
+    # Validate inputs
+    if request.tier not in CRYPTO_PRICING:
+        raise HTTPException(status_code=400, detail="Invalid tier")
+    
+    # Verify certificate exists
+    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    # Check if tx_hash already processed (prevent double-spending)
+    existing = await db.payment_transactions.find_one({'tx_hash': request.tx_hash}, {'_id': 0})
+    if existing and existing.get('payment_status') == 'paid':
+        return {
+            'verified': True,
+            'already_processed': True,
+            'certificate_uuid': existing['certificate_uuid'],
+        }
+    
+    # Verify on-chain
+    logger.info(f"Verifying crypto payment: tx={request.tx_hash}, tier={request.tier}")
+    verification = verify_usdc_payment(request.tx_hash, request.tier)
+    
+    if not verification['valid']:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Payment verification failed: {verification.get('error', 'unknown')}"
+        )
+    
+    # Record transaction
+    transaction = {
+        'session_id': f"crypto_{request.tx_hash[:16]}",
+        'tx_hash': request.tx_hash,
+        'certificate_uuid': request.certificate_uuid,
+        'amount': verification['amount_usdc'],
+        'currency': 'USDC',
+        'sender_address': verification.get('sender'),
+        'payment_method': 'crypto_polygon',
+        'status': 'complete',
+        'payment_status': 'paid',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+    await db.payment_transactions.insert_one(transaction)
+    
+    # Upgrade certificate (if not already)
+    if cert['tier'] == 'free':
+        await db.certificates.update_one(
+            {'uuid': request.certificate_uuid},
+            {'$set': {
+                'tier': 'paid',
+                'status': 'certified',
+                'payment_amount': verification['amount_usdc'],
+                'payment_method': 'crypto_polygon',
+            }}
+        )
+        logger.info(f"Certificate {request.certificate_uuid} upgraded via crypto (tx: {request.tx_hash})")
+    
+    return {
+        'verified': True,
+        'amount_usdc': verification['amount_usdc'],
+        'sender': verification.get('sender'),
+        'certificate_uuid': request.certificate_uuid,
+    }
 
 
 @api_router.post("/delivery/schedule")

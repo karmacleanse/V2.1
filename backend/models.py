@@ -41,6 +41,12 @@ class CheckoutRequest(BaseModel):
     certificate_uuid: str
     origin_url: str
 
+class CryptoPaymentRequest(BaseModel):
+    tier: str  # standard, premium, enterprise
+    certificate_uuid: str
+    tx_hash: str
+    sender_address: Optional[str] = None
+
 class DeliveryRequest(BaseModel):
     certificate_uuid: str
     recipient_email: EmailStr
