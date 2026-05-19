@@ -1,0 +1,98 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast / Bureaucratic Brutalism)",
+  "vibe": "Objective, rigid, functional, bureaucratic, cold, official, satirical",
+  "colors": {
+    "background": {
+      "primary": "#F4F4F0",
+      "secondary": "#E5E5DF",
+      "dossier": "#DCDCD6"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#525252",
+      "muted": "#737373",
+      "stamp": "#D92D20"
+    },
+    "accents": {
+      "warning": "#D92D20",
+      "approved": "#15803D",
+      "pending": "#B45309",
+      "border": "#0A0A0A"
+    }
+  },
+  "typography": {
+    "rules": {
+      "headings": "Chivo or IBM Plex Sans, ALWAYS UPPERCASE, tracking-tight, font-black.",
+      "body": "IBM Plex Mono or Space Mono for forms, labels, and text to give a typewriter/bureaucratic feel.",
+      "labels": "Uppercase, wide tracking (tracking-[0.2em]), text-xs, font-bold."
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-black uppercase tracking-tighter",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-bold uppercase tracking-tight",
+      "h3": "text-xl sm:text-2xl font-bold uppercase",
+      "body": "text-base font-mono",
+      "small": "text-xs font-mono uppercase tracking-widest"
+    }
+  },
+  "spacing_and_layout": {
+    "grid": "Strict grid hierarchy. Mode B: 'Control Room' grid. Dense, data-heavy, full utilization.",
+    "borders": "Heavy use of 1px and 2px solid black borders (border-stone-900). Grid borders on containers.",
+    "padding": "Generous internal padding for forms (p-6, p-8) but sharp, square corners (rounded-none).",
+    "alignment": "Left-aligned content. No center-aligned text unless it's a specific 'stamp' or 'seal'."
+  },
+  "surfaces_and_components": {
+    "buttons": "Brutalist. Flat black background, white text. Or transparent with thick black border. Hover: invert colors or solid red. No rounded corners (rounded-none).",
+    "inputs": "Flat, bottom border only or full sharp 1px border. Background matches paper. No shadow.",
+    "cards": "Dossier style. 2px black border, solid paper background. Often with an uppercase label in the top-left.",
+    "stamps": "Use red or green text with a rotated, thick border to simulate physical stamps ('APPROVED', 'CLASS IV INCIDENT').",
+    "modals": "Harsh modal overlays. bg-black/80 with a pure white/stone-100 central modal, thick black borders, stark close button."
+  },
+  "animations": {
+    "general": "Restrained, mechanical. No bouncy easing. Use linear or step-like animations.",
+    "processing_ritual": "Terminal typing effect, scanlines, blinking cursors. Phrases appearing one by one with a mechanical delay (e.g., 'Analyzing moral debt...', 'Cross-referencing existential dread...', 'Calculating karma deficit...')."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "logo_seal",
+        "url": "https://static.prod-images.emergentagent.com/jobs/ffea1c83-c6cc-46b9-b35f-810f49dbc24e/images/7c21a7f1a11372181bf010fe1e96f49aaffa8a407a0bc1c67d9e00400f23885a.png",
+        "description": "Ministry of Karma Cleanse official bureaucratic seal"
+      },
+      {
+        "category": "background_texture",
+        "url": "https://static.prod-images.emergentagent.com/jobs/ffea1c83-c6cc-46b9-b35f-810f49dbc24e/images/08f803636ffa516db3b37bf98f1cd7656bc1fa818b8bcba2da529002d252ae5a.png",
+        "description": "Dossier textured background"
+      }
+    ]
+  },
+  "views": {
+    "landing_page": {
+      "elements": "Header with seal, large h1 'KARMA CLEANSE v2.1', live flipping counter for 'Incidents Processed', 'Begin Karma Cleansing' brutalist CTA."
+    },
+    "identity_registry": {
+      "elements": "Form asking for 'Legal Name' with an alternative 'Remain Anonymous' button. Input fields look like paper forms."
+    },
+    "incident_declaration": {
+      "elements": "Large textarea for 'Incident Report'. Rotating placeholders like 'I took the last coffee without brewing a new pot...', 'I ghosted my therapist...'. Character counter. Submit button."
+    },
+    "processing_ritual": {
+      "elements": "Animation screen (4-8s). Progress bar filling up mechanically. Sequences of bureaucratic text."
+    },
+    "severity_classification": {
+      "elements": "Result dossier. Red stamp 'CLASS III SEVERITY'. Risk score chart (use simple horizontal bars). Protocol required."
+    },
+    "protocol_selection": {
+      "elements": "Two cards side by side. 'Temporary Absolution' (Free, expires in 24h) vs 'Certified Absolution' (Premium, permanent)."
+    },
+    "certificate_display": {
+      "elements": "Final printable certificate. Contains user ID, incident hash, severity, QR code (mocked SVG), seal image. Share and Download buttons."
+    }
+  },
+  "technical_instructions": {
+    "frameworks": "React, TailwindCSS, Framer Motion (for processing animations).",
+    "icons": "lucide-react for stark, geometric icons.",
+    "testing": "All interactive elements MUST have data-testid attributes (e.g., data-testid='begin-cleansing-btn').",
+    "accessibility": "High contrast ratio guaranteed by black on off-white. ARIA labels on forms."
+  }
+}
