@@ -102,6 +102,28 @@ const ProtocolSelection = () => {
     setCryptoModal(tier);
   };
 
+  const handleNowPayments = async (tier) => {
+    setLoading(true);
+    try {
+      const originUrl = window.location.origin;
+      const response = await axios.post(`${API}/nowpayments/invoice`, {
+        tier: tier.tier_key,
+        certificate_uuid: certificateUuid,
+        origin_url: originUrl,
+      });
+
+      if (response.data?.url) {
+        window.location.href = response.data.url;
+      } else {
+        throw new Error('No invoice URL received');
+      }
+    } catch (error) {
+      console.error('NOWPayments error:', error);
+      alert('Crypto payment unavailable. Try card or direct wallet.');
+      setLoading(false);
+    }
+  };
+
   const handleCryptoSuccess = () => {
     setTier('paid');
     setCryptoModal(null);
@@ -216,6 +238,21 @@ const ProtocolSelection = () => {
                   >
                     <span>🦊</span>
                     <span>Pay {tier.amount} USDC</span>
+                  </button>
+                  <button
+                    onClick={() => handleNowPayments(tier)}
+                    disabled={loading}
+                    className="w-full py-2.5 font-bold uppercase text-xs border-2 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    style={{
+                      background: 'transparent',
+                      color: '#525252',
+                      borderColor: '#525252',
+                      fontFamily: 'Chivo, sans-serif',
+                    }}
+                    data-testid={`nowp-${tier.id}-btn`}
+                  >
+                    <span>₿</span>
+                    <span>Any Crypto</span>
                   </button>
                 </div>
               )}

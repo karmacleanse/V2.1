@@ -26,17 +26,41 @@ const Funnel = () => {
     const params = new URLSearchParams(location.search);
     const success = params.get('success');
     const polarSuccess = params.get('polar_success');
+    const nowpSuccess = params.get('nowp_success');
     const sessionId = params.get('session_id');
     const checkoutId = params.get('checkout_id');
+    const certUuid = params.get('cert_uuid');
 
     if (success === 'true' && sessionId) {
-      // Stripe success
       pollPaymentStatus(sessionId);
     } else if (polarSuccess === 'true' && checkoutId) {
-      // Polar success
       pollPolarStatus(checkoutId);
+    } else if (nowpSuccess === 'true' && certUuid) {
+      pollNowpStatus(certUuid);
     }
   }, [location]);
+
+  const pollNowpStatus = async (certUuid, attempts = 0) => {
+    const maxAttempts = 60; // ~10 min — crypto can take a while
+    if (attempts >= maxAttempts) {
+      alert('Payment processing — check back in 10 minutes.');
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API}/nowpayments/status/${certUuid}`);
+
+      if (response.data.is_paid) {
+        setStep('certificate');
+        navigate('/', { replace: true });
+      } else {
+        setTimeout(() => pollNowpStatus(certUuid, attempts + 1), 10000);
+      }
+    } catch (error) {
+      console.error('NOWPayments poll error:', error);
+      setTimeout(() => pollNowpStatus(certUuid, attempts + 1), 10000);
+    }
+  };
 
   const pollPolarStatus = async (checkoutId, attempts = 0) => {
     const maxAttempts = 15;

@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
+import json
 import resend
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -21,6 +22,12 @@ from registry_id_generator import generate_registry_id
 from crypto_verifier import verify_usdc_payment, find_recent_usdc_payment, CRYPTO_PRICING, CRYPTO_RECIPIENT_ADDRESS, POLYGON_CHAIN_ID, USDC_CONTRACT_ADDRESS
 from polar_payment import (
     create_polar_checkout, verify_polar_webhook, POLAR_PRODUCTS, POLAR_PRICING
+)
+from nowpayments_client import (
+    create_invoice as nowp_create_invoice,
+    verify_ipn_signature as nowp_verify_signature,
+    normalize_payment_status as nowp_normalize_status,
+    NOWPAYMENTS_PRICING,
 )
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse
@@ -418,6 +425,124 @@ async def polar_webhook(request: Request):
                         'polar_order_id': order_id,
                     }}
                 )
+    
+    return {'received': True}
+
+
+@api_router.post("/nowpayments/invoice")
+async def nowpayments_invoice_endpoint(request: CheckoutRequest):
+    """Create NOWPayments invoice for paid tier (accepts 300+ cryptos)"""
+    if request.tier not in NOWPAYMENTS_PRICING:
+        raise HTTPException(status_code=400, detail="Invalid tier")
+    
+    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    try:
+        result = await nowp_create_invoice(
+            tier=request.tier,
+            certificate_uuid=request.certificate_uuid,
+            origin_url=request.origin_url,
+            backend_url=BASE_URL,
+        )
+        
+        # Record transaction
+        transaction = {
+            'session_id': result['invoice_id'],
+            'invoice_id': result['invoice_id'],
+            'certificate_uuid': request.certificate_uuid,
+            'amount': result['amount_usd'],
+            'currency': 'usd',
+            'tier': request.tier,
+            'payment_method': 'nowpayments',
+            'status': 'pending',
+            'payment_status': 'unpaid',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+        }
+        await db.payment_transactions.insert_one(transaction)
+        
+        logger.info(f"NOWPayments invoice {result['invoice_id']} for cert {request.certificate_uuid}")
+        return {'url': result['invoice_url'], 'invoice_id': result['invoice_id']}
+        
+    except Exception as e:
+        logger.error(f"NOWPayments invoice error: {e}")
+        raise HTTPException(status_code=500, detail=f"Invoice creation failed: {str(e)}")
+
+
+@api_router.get("/nowpayments/status/{certificate_uuid}")
+async def nowpayments_status(certificate_uuid: str):
+    """Check NOWPayments payment status by certificate uuid"""
+    cert = await db.certificates.find_one({'uuid': certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    return {
+        'tier': cert.get('tier', 'free'),
+        'status': cert.get('status', 'temporary'),
+        'is_paid': cert.get('tier') == 'paid',
+    }
+
+
+@api_router.post("/webhooks/nowpayments")
+async def nowpayments_webhook(request: Request):
+    """Handle NOWPayments IPN callbacks (signature verified via HMAC-SHA512)"""
+    raw_body = await request.body()
+    received_sig = request.headers.get('x-nowpayments-sig')
+    
+    if not received_sig:
+        logger.warning("NOWPayments webhook missing signature")
+        raise HTTPException(status_code=400, detail="Missing signature")
+    
+    if not nowp_verify_signature(raw_body, received_sig):
+        logger.error("NOWPayments webhook invalid signature")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+    
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
+    order_id = payload.get('order_id')  # = certificate_uuid
+    payment_status = payload.get('payment_status', '')
+    payment_id = payload.get('payment_id')
+    invoice_id = payload.get('invoice_id')
+    pay_amount = payload.get('pay_amount', 0)
+    pay_currency = payload.get('pay_currency', 'usdt')
+    
+    if not order_id:
+        raise HTTPException(status_code=400, detail="Missing order_id")
+    
+    logger.info(f"NOWPayments IPN: status={payment_status}, order={order_id}, payment_id={payment_id}")
+    
+    normalized = nowp_normalize_status(payment_status)
+    
+    # Update transaction
+    await db.payment_transactions.update_one(
+        {'certificate_uuid': order_id, 'payment_method': 'nowpayments'},
+        {'$set': {
+            'payment_status': normalized,
+            'nowp_payment_id': str(payment_id) if payment_id else None,
+            'nowp_payment_status': payment_status,
+            'pay_amount': pay_amount,
+            'pay_currency': pay_currency,
+        }}
+    )
+    
+    # Upgrade certificate if paid
+    if normalized == 'paid':
+        cert = await db.certificates.find_one({'uuid': order_id}, {'_id': 0})
+        if cert and cert.get('tier') == 'free':
+            await db.certificates.update_one(
+                {'uuid': order_id},
+                {'$set': {
+                    'tier': 'paid',
+                    'status': 'certified',
+                    'payment_amount': NOWPAYMENTS_PRICING.get(cert.get('tier_requested', 'standard'), 1.0),
+                    'payment_method': f'nowpayments_{pay_currency}',
+                }}
+            )
+            logger.info(f"Certificate {order_id} upgraded via NOWPayments ({pay_currency})")
     
     return {'received': True}
 
