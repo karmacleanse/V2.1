@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import useRitualStore from '../store/ritualStore';
 import LiveCounter from '../components/LiveCounter';
 
@@ -81,15 +82,23 @@ const Landing = () => {
       <LiveCounter />
 
       {/* Disclaimer */}
-      <motion.p
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1 }}
-        className="absolute bottom-6 text-xs text-center px-4"
+        className="absolute bottom-6 text-xs text-center px-4 flex flex-col items-center gap-2"
         style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
       >
-        Karma Cleanse is not legally recognized in most jurisdictions.
-      </motion.p>
+        <p>Karma Cleanse is not legally recognized in most jurisdictions.</p>
+        <Link
+          to="/terms"
+          className="underline hover:no-underline uppercase tracking-widest"
+          style={{ color: '#525252' }}
+          data-testid="landing-terms-link"
+        >
+          Terms & Operational Disclosures
+        </Link>
+      </motion.div>
     </main>
   );
 };

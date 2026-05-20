@@ -368,6 +368,17 @@ const CertificateView = () => {
         This certificate represents administrative absolution only.
         <br />
         Not legally binding. Emotional bureaucracy since 2026.
+        <br />
+        <a
+          href="/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:no-underline mt-2 inline-block"
+          style={{ color: '#525252' }}
+          data-testid="cert-terms-link"
+        >
+          Terms & Disclosures
+        </a>
       </p>
     </motion.div>
   );

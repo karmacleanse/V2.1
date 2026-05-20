@@ -10,6 +10,7 @@ import ProcessingRitual from './pages/ProcessingRitual';
 import SeverityResult from './pages/SeverityResult';
 import ProtocolSelection from './pages/ProtocolSelection';
 import CertificateView from './pages/CertificateView';
+import Terms from './pages/Terms';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -377,6 +378,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Funnel />} />
         <Route path="/verify/:registryId" element={<VerificationPage />} />
+        <Route path="/terms" element={<Terms />} />
       </Routes>
     </BrowserRouter>
   );

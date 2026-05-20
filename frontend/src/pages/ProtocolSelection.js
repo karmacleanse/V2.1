@@ -234,6 +234,23 @@ const ProtocolSelection = () => {
       >
         Card payments via Polar.sh • Crypto via Plisio (BTC, LTC, USDT TRC/BEP, TRX, TON, DOGE & more)
       </p>
+      <p
+        className="text-xs text-center mt-2 font-mono"
+        style={{ color: '#737373' }}
+      >
+        By proceeding, you acknowledge our{' '}
+        <a
+          href="/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:no-underline"
+          style={{ color: '#525252' }}
+          data-testid="protocol-terms-link"
+        >
+          Terms & Voluntary Contribution Policy
+        </a>
+        .
+      </p>
     </motion.div>
   );
 };
