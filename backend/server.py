@@ -22,18 +22,6 @@ from registry_id_generator import generate_registry_id, generate_compliance_id
 from polar_payment import (
     create_polar_checkout, verify_polar_webhook, POLAR_PRODUCTS, POLAR_PRICING
 )
-from nowpayments_client import (
-    create_invoice as nowp_create_invoice,
-    verify_ipn_signature as nowp_verify_signature,
-    normalize_payment_status as nowp_normalize_status,
-    NOWPAYMENTS_PRICING,
-)
-from cryptomus_client import (
-    create_payment as cryptomus_create_payment,
-    verify_webhook_signature as cryptomus_verify_signature,
-    normalize_status as cryptomus_normalize_status,
-    CRYPTOMUS_PRICING,
-)
 from plisio_client import (
     create_invoice as plisio_create_invoice,
     verify_webhook_signature as plisio_verify_signature,
@@ -495,236 +483,6 @@ async def polar_webhook(request: Request):
     return {'received': True}
 
 
-@api_router.post("/nowpayments/invoice")
-async def nowpayments_invoice_endpoint(request: CheckoutRequest):
-    """Create NOWPayments invoice for paid tier (accepts 300+ cryptos)"""
-    if request.tier not in NOWPAYMENTS_PRICING:
-        raise HTTPException(status_code=400, detail="Invalid tier")
-    
-    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
-    if not cert:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    
-    try:
-        result = await nowp_create_invoice(
-            tier=request.tier,
-            certificate_uuid=request.certificate_uuid,
-            origin_url=request.origin_url,
-            backend_url=BASE_URL,
-        )
-        
-        # Record transaction
-        transaction = {
-            'session_id': result['invoice_id'],
-            'invoice_id': result['invoice_id'],
-            'certificate_uuid': request.certificate_uuid,
-            'amount': result['amount_usd'],
-            'currency': 'usd',
-            'tier': request.tier,
-            'payment_method': 'nowpayments',
-            'status': 'pending',
-            'payment_status': 'unpaid',
-            'created_at': datetime.now(timezone.utc).isoformat(),
-        }
-        await db.payment_transactions.insert_one(transaction)
-        
-        logger.info(f"NOWPayments invoice {result['invoice_id']} for cert {request.certificate_uuid}")
-        return {'url': result['invoice_url'], 'invoice_id': result['invoice_id']}
-        
-    except Exception as e:
-        logger.error(f"NOWPayments invoice error: {e}")
-        raise HTTPException(status_code=500, detail=f"Invoice creation failed: {str(e)}")
-
-
-@api_router.get("/nowpayments/status/{certificate_uuid}")
-async def nowpayments_status(certificate_uuid: str):
-    """Check NOWPayments payment status by certificate uuid"""
-    cert = await db.certificates.find_one({'uuid': certificate_uuid}, {'_id': 0})
-    if not cert:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    
-    return {
-        'tier': cert.get('tier', 'free'),
-        'status': cert.get('status', 'temporary'),
-        'is_paid': cert.get('tier') == 'paid',
-    }
-
-
-@api_router.post("/webhooks/nowpayments")
-async def nowpayments_webhook(request: Request):
-    """Handle NOWPayments IPN callbacks (signature verified via HMAC-SHA512)"""
-    raw_body = await request.body()
-    received_sig = request.headers.get('x-nowpayments-sig')
-    
-    if not received_sig:
-        logger.warning("NOWPayments webhook missing signature")
-        raise HTTPException(status_code=400, detail="Missing signature")
-    
-    if not nowp_verify_signature(raw_body, received_sig):
-        logger.error("NOWPayments webhook invalid signature")
-        raise HTTPException(status_code=403, detail="Invalid signature")
-    
-    try:
-        payload = json.loads(raw_body)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
-    
-    order_id = payload.get('order_id')  # = certificate_uuid
-    payment_status = payload.get('payment_status', '')
-    payment_id = payload.get('payment_id')
-    invoice_id = payload.get('invoice_id')
-    pay_amount = payload.get('pay_amount', 0)
-    pay_currency = payload.get('pay_currency', 'usdt')
-    
-    if not order_id:
-        raise HTTPException(status_code=400, detail="Missing order_id")
-    
-    logger.info(f"NOWPayments IPN: status={payment_status}, order={order_id}, payment_id={payment_id}")
-    
-    normalized = nowp_normalize_status(payment_status)
-    
-    # Update transaction
-    await db.payment_transactions.update_one(
-        {'certificate_uuid': order_id, 'payment_method': 'nowpayments'},
-        {'$set': {
-            'payment_status': normalized,
-            'nowp_payment_id': str(payment_id) if payment_id else None,
-            'nowp_payment_status': payment_status,
-            'pay_amount': pay_amount,
-            'pay_currency': pay_currency,
-        }}
-    )
-    
-    # Upgrade certificate if paid
-    if normalized == 'paid':
-        cert = await db.certificates.find_one({'uuid': order_id}, {'_id': 0})
-        if cert and cert.get('tier') == 'free':
-            await db.certificates.update_one(
-                {'uuid': order_id},
-                {'$set': {
-                    'tier': 'paid',
-                    'status': 'certified',
-                    'payment_amount': NOWPAYMENTS_PRICING.get(cert.get('tier_requested', 'standard'), 1.0),
-                    'payment_method': f'nowpayments_{pay_currency}',
-                }}
-            )
-            logger.info(f"Certificate {order_id} upgraded via NOWPayments ({pay_currency})")
-    
-    return {'received': True}
-
-
-
-@api_router.post("/cryptomus/payment")
-async def cryptomus_payment_endpoint(request: CheckoutRequest):
-    """Create Cryptomus payment invoice (100+ coins, min $0.50)"""
-    if request.tier not in CRYPTOMUS_PRICING:
-        raise HTTPException(status_code=400, detail="Invalid tier")
-    
-    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
-    if not cert:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    
-    try:
-        result = await cryptomus_create_payment(
-            tier=request.tier,
-            certificate_uuid=request.certificate_uuid,
-            origin_url=request.origin_url,
-            backend_url=BASE_URL,
-        )
-        
-        transaction = {
-            'session_id': result['uuid'],
-            'cryptomus_uuid': result['uuid'],
-            'order_id': result['order_id'],
-            'certificate_uuid': request.certificate_uuid,
-            'amount': result['amount_usd'],
-            'currency': 'usd',
-            'tier': request.tier,
-            'payment_method': 'cryptomus',
-            'status': 'pending',
-            'payment_status': 'unpaid',
-            'created_at': datetime.now(timezone.utc).isoformat(),
-        }
-        await db.payment_transactions.insert_one(transaction)
-        
-        logger.info(f"Cryptomus payment {result['uuid']} for cert {request.certificate_uuid}")
-        return {'url': result['url'], 'uuid': result['uuid']}
-        
-    except Exception as e:
-        logger.error(f"Cryptomus payment error: {e}")
-        raise HTTPException(status_code=500, detail=f"Payment creation failed: {str(e)}")
-
-
-@api_router.get("/cryptomus/status/{certificate_uuid}")
-async def cryptomus_status(certificate_uuid: str):
-    """Check Cryptomus payment status by certificate uuid"""
-    cert = await db.certificates.find_one({'uuid': certificate_uuid}, {'_id': 0})
-    if not cert:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    
-    return {
-        'tier': cert.get('tier', 'free'),
-        'status': cert.get('status', 'temporary'),
-        'is_paid': cert.get('tier') == 'paid',
-    }
-
-
-@api_router.post("/webhooks/cryptomus")
-async def cryptomus_webhook(request: Request):
-    """Handle Cryptomus webhook (signature verified via MD5)"""
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
-    
-    received_sign = payload.get('sign')
-    if not received_sign:
-        logger.warning("Cryptomus webhook missing signature")
-        raise HTTPException(status_code=400, detail="Missing signature")
-    
-    if not cryptomus_verify_signature(payload, received_sign):
-        logger.error("Cryptomus webhook invalid signature")
-        raise HTTPException(status_code=403, detail="Invalid signature")
-    
-    status = payload.get('status', '')
-    order_id = payload.get('order_id', '')
-    amount = payload.get('amount', '0')
-    payer_currency = payload.get('payer_currency', 'usdt')
-    
-    logger.info(f"Cryptomus webhook: status={status}, order={order_id}")
-    
-    cert_uuid = order_id.split('_')[0] if order_id else None
-    if not cert_uuid:
-        raise HTTPException(status_code=400, detail="Invalid order_id")
-    
-    normalized = cryptomus_normalize_status(status)
-    
-    await db.payment_transactions.update_one(
-        {'order_id': order_id},
-        {'$set': {
-            'payment_status': normalized,
-            'cryptomus_status': status,
-            'paid_amount': amount,
-            'paid_currency': payer_currency,
-        }}
-    )
-    
-    if normalized == 'paid':
-        cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
-        if cert and cert.get('tier') == 'free':
-            await db.certificates.update_one(
-                {'uuid': cert_uuid},
-                {'$set': {
-                    'tier': 'paid',
-                    'status': 'certified',
-                    'payment_amount': float(amount),
-                    'payment_method': f'cryptomus_{payer_currency}',
-                }}
-            )
-            logger.info(f"Certificate {cert_uuid} upgraded via Cryptomus ({payer_currency})")
-    
-    return {'received': True}
-
 
 @api_router.post("/plisio/invoice")
 async def plisio_invoice_endpoint(request: CheckoutRequest):
@@ -1130,6 +888,87 @@ async def _scheduled_delivery_worker():
         except Exception as e:
             logger.error(f"[worker] loop error: {e}")
         await asyncio.sleep(30)
+
+
+# --- Resend webhook (delivery/open/click tracking) -----------------------
+RESEND_WEBHOOK_SECRET = os.environ.get('RESEND_WEBHOOK_SECRET', '')
+
+
+@api_router.post("/webhooks/resend")
+async def resend_webhook(request: Request):
+    """Receive Resend (Svix) webhooks: email.sent / .delivered / .opened / .clicked / .bounced / .complained."""
+    raw_body = await request.body()
+    headers = dict(request.headers)
+
+    # Verify signature if secret configured
+    if RESEND_WEBHOOK_SECRET:
+        try:
+            from svix.webhooks import Webhook, WebhookVerificationError
+            wh = Webhook(RESEND_WEBHOOK_SECRET)
+            wh.verify(raw_body, headers)
+        except WebhookVerificationError as e:
+            logger.error(f"Resend webhook invalid signature: {e}")
+            raise HTTPException(status_code=403, detail="Invalid signature")
+        except Exception as e:
+            logger.error(f"Resend webhook verification error: {e}")
+            raise HTTPException(status_code=400, detail="Verification error")
+    else:
+        logger.warning("RESEND_WEBHOOK_SECRET not configured — skipping signature verification")
+
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    event_type = payload.get('type', '')
+    event_data = payload.get('data', {})
+    email_id = event_data.get('email_id') or event_data.get('id')
+    created_at = payload.get('created_at') or datetime.now(timezone.utc).isoformat()
+
+    # Persist event
+    await db.email_events.insert_one({
+        'event_type': event_type,
+        'email_id': email_id,
+        'to': event_data.get('to'),
+        'subject': event_data.get('subject'),
+        'click_url': event_data.get('click', {}).get('link') if isinstance(event_data.get('click'), dict) else None,
+        'bounce_type': event_data.get('bounce', {}).get('type') if isinstance(event_data.get('bounce'), dict) else None,
+        'raw': event_data,
+        'received_at': datetime.now(timezone.utc).isoformat(),
+        'event_at': created_at,
+    })
+
+    # Update scheduled_deliveries metrics
+    update = {}
+    if event_type == 'email.delivered':
+        update['delivered_at'] = created_at
+    elif event_type == 'email.opened':
+        update['opened_at'] = created_at
+    elif event_type == 'email.clicked':
+        update['clicked_at'] = created_at
+    elif event_type == 'email.bounced':
+        update['bounced_at'] = created_at
+    elif event_type == 'email.complained':
+        update['complained_at'] = created_at
+
+    if update and email_id:
+        await db.scheduled_deliveries.update_one(
+            {'email_id': email_id},
+            {'$set': update}
+        )
+
+    logger.info(f"Resend event: {event_type} email={email_id}")
+    return {'received': True}
+
+
+@api_router.get("/email-events/{email_id}")
+async def get_email_events(email_id: str):
+    """Get the timeline of events for a specific email."""
+    events = await db.email_events.find(
+        {'email_id': email_id},
+        {'_id': 0, 'raw': 0},
+    ).sort('event_at', 1).to_list(length=50)
+    return {'email_id': email_id, 'events': events}
 
 
 @app.on_event("startup")

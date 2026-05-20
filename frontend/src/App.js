@@ -21,116 +21,66 @@ const Funnel = () => {
   const setStep = useRitualStore((state) => state.setStep);
   const location = useLocation();
   const navigate = useNavigate();
+  const [pollingState, setPollingState] = useState(null); // { provider, attempt, max }
 
   // Handle payment return
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const success = params.get('success');
     const polarSuccess = params.get('polar_success');
-    const cryptomusSuccess = params.get('cryptomus_success');
     const plisioSuccess = params.get('plisio_success');
-    const sessionId = params.get('session_id');
     const checkoutId = params.get('checkout_id');
     const certUuid = params.get('cert_uuid');
 
-    if (success === 'true' && sessionId) {
-      pollPaymentStatus(sessionId);
-    } else if (polarSuccess === 'true' && checkoutId) {
+    if (polarSuccess === 'true' && checkoutId) {
       pollPolarStatus(checkoutId);
-    } else if (cryptomusSuccess === 'true' && certUuid) {
-      pollCryptomusStatus(certUuid);
     } else if (plisioSuccess === 'true' && certUuid) {
       pollPlisioStatus(certUuid);
     }
   }, [location]);
 
+  // Unified polling: 60 attempts × 5 seconds = 5 minutes
+  const POLL_MAX = 60;
+  const POLL_INTERVAL = 5000;
+
   const pollPlisioStatus = async (certUuid, attempts = 0) => {
-    const maxAttempts = 60;
-    if (attempts >= maxAttempts) {
-      alert('Payment processing — check back in 10 minutes.');
+    setPollingState({ provider: 'plisio', attempt: attempts + 1, max: POLL_MAX });
+    if (attempts >= POLL_MAX) {
+      setPollingState({ provider: 'plisio', timedOut: true });
       return;
     }
     try {
       const response = await axios.get(`${API}/plisio/status/${certUuid}`);
       if (response.data.is_paid) {
+        setPollingState(null);
         setStep('certificate');
         navigate('/', { replace: true });
       } else {
-        setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), 10000);
+        setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), POLL_INTERVAL);
       }
     } catch (error) {
       console.error('Plisio poll error:', error);
-      setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), 10000);
-    }
-  };
-
-  const pollCryptomusStatus = async (certUuid, attempts = 0) => {
-    const maxAttempts = 60;
-    if (attempts >= maxAttempts) {
-      alert('Payment processing — check back in 10 minutes.');
-      return;
-    }
-    try {
-      const response = await axios.get(`${API}/cryptomus/status/${certUuid}`);
-      if (response.data.is_paid) {
-        setStep('certificate');
-        navigate('/', { replace: true });
-      } else {
-        setTimeout(() => pollCryptomusStatus(certUuid, attempts + 1), 10000);
-      }
-    } catch (error) {
-      console.error('Cryptomus poll error:', error);
-      setTimeout(() => pollCryptomusStatus(certUuid, attempts + 1), 10000);
+      setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), POLL_INTERVAL);
     }
   };
 
   const pollPolarStatus = async (checkoutId, attempts = 0) => {
-    const maxAttempts = 15;
-    if (attempts >= maxAttempts) {
-      alert('Payment confirmation pending. Refresh page in a minute.');
+    setPollingState({ provider: 'polar', attempt: attempts + 1, max: POLL_MAX });
+    if (attempts >= POLL_MAX) {
+      setPollingState({ provider: 'polar', timedOut: true });
       return;
     }
-
     try {
       const response = await axios.get(`${API}/polar/status/${checkoutId}`);
-
       if (response.data.payment_status === 'paid') {
+        setPollingState(null);
         setStep('certificate');
         navigate('/', { replace: true });
       } else {
-        setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), 2000);
+        setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), POLL_INTERVAL);
       }
     } catch (error) {
-      console.error('Error checking Polar status:', error);
-      setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), 2000);
-    }
-  };
-
-  const pollPaymentStatus = async (sessionId, attempts = 0) => {
-    const maxAttempts = 10;
-    if (attempts >= maxAttempts) {
-      alert('Payment verification timeout. Please contact support.');
-      return;
-    }
-
-    try {
-      const response = await axios.get(`${API}/checkout/status/${sessionId}`);
-      
-      if (response.data.payment_status === 'paid') {
-        // Payment successful, show certificate
-        setStep('certificate');
-        // Clean URL
-        navigate('/', { replace: true });
-      } else if (response.data.status === 'expired') {
-        alert('Payment session expired.');
-        setStep('protocol');
-      } else {
-        // Continue polling
-        setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
-      }
-    } catch (error) {
-      console.error('Error checking payment status:', error);
-      setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
+      console.error('Polar poll error:', error);
+      setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), POLL_INTERVAL);
     }
   };
 
@@ -157,9 +107,97 @@ const Funnel = () => {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 py-8"
+      className="min-h-screen flex items-center justify-center px-4 py-8 relative"
       style={{ background: '#F4F4F0' }}
     >
+      {pollingState && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(244,244,240,0.96)' }}
+          data-testid="payment-polling-overlay"
+        >
+          <div
+            className="max-w-md w-full border-2 p-8 text-center"
+            style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }}
+          >
+            <div
+              className="text-xs uppercase tracking-widest mb-4"
+              style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+            >
+              Payment Provider · {pollingState.provider === 'polar' ? 'Polar.sh' : 'Plisio'}
+            </div>
+            {!pollingState.timedOut ? (
+              <>
+                <h2
+                  className="text-2xl font-black uppercase tracking-tight mb-2"
+                  style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}
+                >
+                  Verifying Payment
+                </h2>
+                <p
+                  className="text-sm font-mono mb-6"
+                  style={{ color: '#525252' }}
+                >
+                  Awaiting webhook confirmation from {pollingState.provider}. This usually takes 10-30 seconds.
+                </p>
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <span
+                    className="inline-block w-3 h-3 animate-pulse"
+                    style={{ background: '#0A0A0A' }}
+                  />
+                  <span
+                    className="inline-block w-3 h-3 animate-pulse"
+                    style={{ background: '#0A0A0A', animationDelay: '0.2s' }}
+                  />
+                  <span
+                    className="inline-block w-3 h-3 animate-pulse"
+                    style={{ background: '#0A0A0A', animationDelay: '0.4s' }}
+                  />
+                </div>
+                <div
+                  className="text-xs font-mono"
+                  style={{ color: '#737373' }}
+                >
+                  Attempt {pollingState.attempt} of {pollingState.max} · Elapsed ~{Math.round((pollingState.attempt * 5))} sec
+                </div>
+              </>
+            ) : (
+              <>
+                <h2
+                  className="text-2xl font-black uppercase tracking-tight mb-2"
+                  style={{ fontFamily: 'Chivo, sans-serif', color: '#B45309' }}
+                >
+                  Confirmation Pending
+                </h2>
+                <p
+                  className="text-sm font-mono mb-6"
+                  style={{ color: '#525252' }}
+                >
+                  Your payment may still be processing on the {pollingState.provider} network.
+                  Your certificate will be issued automatically once confirmed.
+                  You can safely close this page and return later.
+                </p>
+                <button
+                  onClick={() => {
+                    setPollingState(null);
+                    navigate('/', { replace: true });
+                  }}
+                  className="py-2 px-6 font-bold uppercase text-sm border-2"
+                  style={{
+                    background: '#0A0A0A',
+                    color: '#F4F4F0',
+                    borderColor: '#0A0A0A',
+                    fontFamily: 'Chivo, sans-serif',
+                  }}
+                  data-testid="polling-dismiss-btn"
+                >
+                  Return to Home
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {renderStep()}
     </div>
   );

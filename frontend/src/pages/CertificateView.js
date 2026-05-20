@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import QRCode from 'react-qr-code';
 import axios from 'axios';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import useRitualStore from '../store/ritualStore';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -20,6 +22,52 @@ const CertificateView = () => {
   const [sketchUrl, setSketchUrl] = useState(null);
   const [sketchLoading, setSketchLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const certRef = useRef(null);
+
+  const handleDownloadPdf = async () => {
+    if (!certRef.current || downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const canvas = await html2canvas(certRef.current, {
+        scale: 2,
+        backgroundColor: '#FFFFFF',
+        useCORS: true,
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth - 20;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let position = 10;
+      if (imgHeight > pdfHeight - 20) {
+        // Scale down to fit on one page
+        const scaleFactor = (pdfHeight - 20) / imgHeight;
+        const newWidth = imgWidth * scaleFactor;
+        pdf.addImage(
+          imgData,
+          'PNG',
+          (pdfWidth - newWidth) / 2,
+          position,
+          newWidth,
+          imgHeight * scaleFactor
+        );
+      } else {
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      }
+      pdf.save(`KarmaCleanse_${registryId}.pdf`);
+    } catch (e) {
+      console.error('PDF generation failed:', e);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const verificationUrl = `${window.location.origin}/verify/${registryId}`;
 
@@ -89,6 +137,7 @@ const CertificateView = () => {
     >
       {/* Certificate */}
       <div
+        ref={certRef}
         className="border-2 p-8 mb-6 relative overflow-hidden"
         style={{
           background: '#FFFFFF',
@@ -398,11 +447,25 @@ const CertificateView = () => {
       {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <button
-          onClick={() => setShowDelivery(!showDelivery)}
-          className="flex-1 py-3 font-bold uppercase text-sm border-2 transition-colors"
+          onClick={handleDownloadPdf}
+          disabled={downloadingPdf}
+          className="flex-1 py-3 font-bold uppercase text-sm border-2 transition-colors disabled:opacity-50"
           style={{
             background: '#0A0A0A',
             color: '#F4F4F0',
+            borderColor: '#0A0A0A',
+            fontFamily: 'Chivo, sans-serif',
+          }}
+          data-testid="download-pdf-btn"
+        >
+          {downloadingPdf ? 'Generating PDF...' : '⬇ Download PDF'}
+        </button>
+        <button
+          onClick={() => setShowDelivery(!showDelivery)}
+          className="flex-1 py-3 font-bold uppercase text-sm border-2 transition-colors"
+          style={{
+            background: 'transparent',
+            color: '#0A0A0A',
             borderColor: '#0A0A0A',
             fontFamily: 'Chivo, sans-serif',
           }}
