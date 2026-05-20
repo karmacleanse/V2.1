@@ -729,20 +729,27 @@ async def plisio_status(certificate_uuid: str):
 @api_router.api_route("/webhooks/plisio", methods=["GET", "POST"])
 async def plisio_webhook(request: Request):
     """
-    Handle Plisio webhook (signature verified via HMAC-SHA256 over JSON payload).
-    Plisio sends POST with JSON body containing `verify_hash`.
+    Handle Plisio webhook.
+    Plisio sends POST as application/x-www-form-urlencoded (not JSON).
+    Signature: HMAC-SHA1 of PHP serialize(ksort(payload_without_verify_hash))
     """
+    content_type = request.headers.get('content-type', '')
     try:
-        if request.method == 'POST':
+        if request.method == 'GET':
+            payload = dict(request.query_params)
+        elif 'application/json' in content_type:
             payload = await request.json()
         else:
-            payload = dict(request.query_params)
-    except Exception:
+            # Default: form-urlencoded (Plisio default)
+            form = await request.form()
+            payload = {k: str(v) for k, v in form.items()}
+    except Exception as e:
+        logger.error(f"Plisio webhook payload parse error: {e}")
         raise HTTPException(status_code=400, detail="Invalid payload")
     
     received_hash = payload.get('verify_hash')
     if not received_hash:
-        logger.warning("Plisio webhook missing verify_hash")
+        logger.warning(f"Plisio webhook missing verify_hash. Content-Type={content_type} keys={list(payload.keys())}")
         raise HTTPException(status_code=400, detail="Missing verify_hash")
     
     if not plisio_verify_signature(payload, received_hash):

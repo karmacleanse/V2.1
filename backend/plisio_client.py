@@ -1,24 +1,23 @@
 """
 Plisio crypto payment integration.
 Creates hosted invoices (BTC, LTC, BCH, DOGE, USDT TRC/BEP, TRX, TON and more)
-and verifies webhook signatures via HMAC-SHA256 of the JSON payload
-(excluding `verify_hash`) using the API secret key.
+and verifies webhook signatures via HMAC-SHA1 of the PHP-serialized payload
+(excluding `verify_hash`, with keys ksort'd) using the API secret key.
 
-Plisio API specifics:
-- All requests are GET with query parameters.
-- Base URL: https://api.plisio.net/api/v1
-- Webhook signature field: `verify_hash` in body, computed as
-  hmac_sha256(secret_key, json(payload_without_verify_hash_sorted))
+Reference (Plisio docs/PHP SDK):
+    ksort($post)
+    $postString = serialize($post)
+    $checkKey = hash_hmac('sha1', $postString, $SECRET_KEY)
 """
 import os
 import hmac
 import hashlib
-import json
 import logging
 import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 import httpx
+import phpserialize
 
 load_dotenv(Path(__file__).parent / '.env')
 
@@ -105,39 +104,97 @@ async def get_invoice_status(txn_id: str) -> dict:
         return resp.json()
 
 
+def _php_serialize(obj):
+    """Serialize a dict/list/string to PHP's serialize() format.
+    
+    Plisio expects all values as strings (POST form data), then ksort'd,
+    then PHP serialize, then HMAC-SHA1 with the secret key.
+    """
+    # phpserialize handles native types — convert dict keys/values to PHP-compatible
+    # All keys are strings. All values should be passed as bytes/strings.
+    if isinstance(obj, dict):
+        # phpserialize requires bytes for strings; encode keys and values
+        serializable = {}
+        for k, v in obj.items():
+            key = k.encode('utf-8') if isinstance(k, str) else k
+            serializable[key] = _php_serialize_value(v)
+        return phpserialize.dumps(serializable)
+    return phpserialize.dumps(obj)
+
+
+def _php_serialize_value(v):
+    """Convert a Python value into a form suitable for phpserialize."""
+    if v is None:
+        return b''  # PHP empty string
+    if isinstance(v, bool):
+        return b'1' if v else b''
+    if isinstance(v, (int, float)):
+        # Plisio sends all values as POST strings — match that.
+        return str(v).encode('utf-8')
+    if isinstance(v, str):
+        return v.encode('utf-8')
+    if isinstance(v, bytes):
+        return v
+    if isinstance(v, list):
+        return [_php_serialize_value(x) for x in v]
+    if isinstance(v, dict):
+        out = {}
+        for k, val in v.items():
+            key = k.encode('utf-8') if isinstance(k, str) else k
+            out[key] = _php_serialize_value(val)
+        return out
+    return str(v).encode('utf-8')
+
+
 def verify_webhook_signature(payload: dict, received_hash: str) -> bool:
     """
     Verify Plisio webhook signature.
-    Algorithm: HMAC-SHA256 of JSON-encoded payload (with keys sorted)
-    excluding the `verify_hash` field, using the API secret key.
+    Algorithm (from Plisio PHP SDK):
+        1. Remove `verify_hash`
+        2. ksort() the payload
+        3. PHP serialize() the array (all values as strings)
+        4. HMAC-SHA1 with secret key
     """
     if not PLISIO_API_KEY or not received_hash:
         return False
     try:
         payload_copy = {k: v for k, v in payload.items() if k != 'verify_hash'}
-        # Plisio expects ksort + json_encode (PHP); Python equivalent:
-        body = json.dumps(payload_copy, sort_keys=True, separators=(',', ':'))
+        # ksort — phpserialize.dumps with dict preserves insertion order, so we sort first
+        sorted_payload = dict(sorted(payload_copy.items()))
+        serialized = _php_serialize(sorted_payload)
         computed = hmac.new(
             PLISIO_API_KEY.encode('utf-8'),
-            body.encode('utf-8'),
-            hashlib.sha256,
+            serialized,
+            hashlib.sha1,
         ).hexdigest()
-        return hmac.compare_digest(computed, received_hash)
+        if not hmac.compare_digest(computed, received_hash):
+            logger.warning(
+                f"Plisio sig mismatch. expected={received_hash} got={computed} "
+                f"serialized_preview={serialized[:200]!r}"
+            )
+            return False
+        return True
     except Exception as e:
         logger.error(f"Plisio signature error: {e}")
         return False
 
 
 def normalize_status(plisio_status: str) -> str:
-    """Map Plisio status to internal status."""
+    """Map Plisio status to internal status.
+    
+    `mismatch` (underpaid/overpaid by amount outside dashboard tolerance) is
+    treated as `paid_underpaid` — the agent should review manually but the
+    money is on chain. Cert will NOT be auto-upgraded from this state.
+    """
     mapping = {
         'new': 'pending',
         'pending': 'pending',
         'pending internal': 'pending',
         'expired': 'failed',
         'completed': 'paid',
-        'mismatch': 'pending',  # underpaid / overpaid — manual review
+        'mismatch': 'paid_underpaid',
         'error': 'failed',
         'cancelled': 'failed',
+        'cancelled duplicate': 'failed',
     }
     return mapping.get(plisio_status, 'pending')
