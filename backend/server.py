@@ -434,64 +434,148 @@ async def payment_status(cert_uuid: str):
     }
 
 
+class ReconcileRequest(BaseModel):
+    certificate_uuid: str
+    checkout_id: Optional[str] = None
+
+
+@api_router.post("/payment/reconcile")
+async def reconcile_payment(req: ReconcileRequest):
+    """
+    Manual reconciliation: query Polar API to check if checkout was actually paid.
+    Used by the user if a Polar webhook was missed or hung. If Polar confirms
+    the order is paid, upgrade the certificate.
+    """
+    cert = await db.certificates.find_one({'uuid': req.certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    if cert.get('tier') == 'paid':
+        return {'is_paid': True, 'message': 'Already paid', 'cert_uuid': req.certificate_uuid}
+    
+    # Look up checkout_id from transaction if not provided
+    checkout_id = req.checkout_id
+    if not checkout_id:
+        tx = await db.payment_transactions.find_one(
+            {'certificate_uuid': req.certificate_uuid, 'payment_method': 'polar_card'},
+            sort=[('created_at', -1)],
+        )
+        if tx:
+            checkout_id = tx.get('session_id')
+    
+    if not checkout_id:
+        return {'is_paid': False, 'message': 'No Polar checkout found for this cert'}
+    
+    # Query Polar API for checkout status
+    try:
+        from polar_payment import get_polar_client
+        polar = get_polar_client()
+        checkout = polar.checkouts.get(id=checkout_id)
+        status = getattr(checkout, 'status', None)
+        logger.info(f"Reconcile: cert={req.certificate_uuid}, checkout={checkout_id}, status={status}")
+        
+        if status == 'succeeded' or status == 'confirmed':
+            # Upgrade the certificate
+            amount_cents = getattr(checkout, 'total_amount', None) or getattr(checkout, 'amount', 0)
+            amount = (amount_cents or 0) / 100.0
+            await db.certificates.update_one(
+                {'uuid': req.certificate_uuid},
+                {'$set': {
+                    'tier': 'paid',
+                    'status': 'certified',
+                    'payment_amount': amount,
+                    'payment_method': 'polar_card',
+                    'reconciled_at': datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+            logger.info(f"Reconciled cert {req.certificate_uuid} via Polar API check")
+            return {'is_paid': True, 'message': 'Payment confirmed via Polar API', 'cert_uuid': req.certificate_uuid}
+        
+        return {'is_paid': False, 'status': status, 'message': 'Polar reports checkout not yet paid'}
+    except Exception as e:
+        logger.error(f"Reconcile error: {e}")
+        raise HTTPException(status_code=500, detail=f"Reconciliation failed: {str(e)}")
+
+
 @api_router.post("/webhooks/polar")
 async def polar_webhook(request: Request):
     """Handle Polar webhook events (order.paid, etc.)"""
     raw_body = await request.body()
     headers = dict(request.headers)
     
+    # Step 1: verify signature (raises 403 on bad signature)
     try:
-        event = verify_polar_webhook(raw_body, headers)
+        verify_polar_webhook(raw_body, headers)
     except Exception as e:
         logger.error(f"Polar webhook verification failed: {e}")
         raise HTTPException(status_code=403, detail="Invalid signature")
     
-    event_type = event.get('type') if isinstance(event, dict) else getattr(event, 'type', None)
-    data = event.get('data') if isinstance(event, dict) else getattr(event, 'data', None)
+    # Step 2: parse JSON directly (don't rely on SDK Pydantic model)
+    try:
+        event = json.loads(raw_body)
+    except Exception as e:
+        logger.error(f"Polar webhook JSON parse failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
     
-    if hasattr(data, 'model_dump'):
-        data = data.model_dump()
+    event_type = event.get('type', '')
+    data = event.get('data') or {}
     
-    logger.info(f"Polar webhook: {event_type}")
+    logger.info(f"Polar webhook: type={event_type}, data_keys={list(data.keys())[:10]}")
     
-    # Idempotency: prevent duplicate processing
+    # Step 3: idempotency
     webhook_id = headers.get('webhook-id')
     if webhook_id:
         existing = await db.processed_webhooks.find_one({'_id': webhook_id})
         if existing:
-            logger.info(f"Webhook {webhook_id} already processed")
-            return {'received': True, 'duplicate': True}
-        await db.processed_webhooks.insert_one({
-            '_id': webhook_id,
-            'event_type': event_type,
-            'processed_at': datetime.now(timezone.utc).isoformat(),
-        })
+            logger.info(f"Webhook {webhook_id} already processed — re-running upgrade logic anyway")
+        else:
+            await db.processed_webhooks.insert_one({
+                '_id': webhook_id,
+                'event_type': event_type,
+                'processed_at': datetime.now(timezone.utc).isoformat(),
+            })
     
-    # Handle order.paid
-    if event_type == 'order.paid' or event_type == 'order.created':
-        metadata = data.get('metadata', {}) if data else {}
+    # Step 4: process order.paid / order.created
+    if event_type in ('order.paid', 'order.created'):
+        metadata = data.get('metadata') or {}
         cert_uuid = metadata.get('certificate_uuid')
-        checkout_id = data.get('checkout_id') if data else None
-        order_id = data.get('id') if data else None
-        amount = (data.get('amount', 0) / 100.0) if data else 0  # Polar uses cents
+        checkout_id = data.get('checkout_id')
+        order_id = data.get('id')
+        # Polar amounts are in cents (subtotal_amount or amount)
+        amount_cents = data.get('total_amount') or data.get('subtotal_amount') or data.get('amount') or 0
+        amount = amount_cents / 100.0
+        is_paid = data.get('paid') is True or data.get('status') == 'paid' or event_type == 'order.paid'
         
-        if cert_uuid:
+        logger.info(f"Polar order: cert_uuid={cert_uuid}, checkout_id={checkout_id}, order_id={order_id}, paid={is_paid}, amount=${amount}")
+        
+        if not cert_uuid:
+            logger.error(f"Polar webhook missing certificate_uuid in metadata: {metadata!r}")
+            return {'received': True, 'warning': 'no_cert_uuid'}
+        
+        if is_paid:
             cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
-            if cert and cert['tier'] == 'free':
-                await db.certificates.update_one(
+            if not cert:
+                logger.error(f"Polar webhook: cert {cert_uuid} not found in DB")
+                return {'received': True, 'warning': 'cert_not_found'}
+            
+            if cert.get('tier') == 'free':
+                result = await db.certificates.update_one(
                     {'uuid': cert_uuid},
                     {'$set': {
                         'tier': 'paid',
                         'status': 'certified',
                         'payment_amount': amount,
                         'payment_method': 'polar_card',
+                        'polar_order_id': order_id,
                     }}
                 )
-                logger.info(f"Certificate {cert_uuid} upgraded via Polar webhook")
+                logger.info(f"Certificate {cert_uuid} upgraded via Polar webhook (matched={result.matched_count})")
+            else:
+                logger.info(f"Certificate {cert_uuid} already tier={cert.get('tier')}, skipping upgrade")
             
-            # Update transaction
+            # Update transaction record (if exists)
             if checkout_id:
-                await db.payment_transactions.update_one(
+                tx_result = await db.payment_transactions.update_one(
                     {'session_id': checkout_id},
                     {'$set': {
                         'status': 'complete',
@@ -499,6 +583,7 @@ async def polar_webhook(request: Request):
                         'polar_order_id': order_id,
                     }}
                 )
+                logger.info(f"Transaction update: matched={tx_result.matched_count}")
     
     return {'received': True}
 

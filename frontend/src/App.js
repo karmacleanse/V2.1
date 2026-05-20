@@ -45,9 +45,16 @@ const Funnel = () => {
   const POLL_INTERVAL = 5000;
 
   const pollPaymentByCert = async (certUuid, provider, attempts = 0) => {
-    setPollingState({ provider, attempt: attempts + 1, max: POLL_MAX });
+    setPollingState((prev) => ({
+      ...(prev || {}),
+      provider,
+      certUuid,
+      attempt: attempts + 1,
+      max: POLL_MAX,
+      reconciling: prev?.reconciling || false,
+    }));
     if (attempts >= POLL_MAX) {
-      setPollingState({ provider, timedOut: true });
+      setPollingState({ provider, certUuid, timedOut: true });
       return;
     }
     try {
@@ -62,6 +69,34 @@ const Funnel = () => {
     } catch (error) {
       console.error(`${provider} poll error:`, error);
       setTimeout(() => pollPaymentByCert(certUuid, provider, attempts + 1), POLL_INTERVAL);
+    }
+  };
+
+  const triggerReconcile = async (certUuid) => {
+    if (!certUuid) return;
+    setPollingState((prev) => ({ ...(prev || {}), reconciling: true }));
+    try {
+      const response = await axios.post(`${API}/payment/reconcile`, {
+        certificate_uuid: certUuid,
+      });
+      if (response.data.is_paid) {
+        setPollingState(null);
+        setStep('certificate');
+        navigate('/', { replace: true });
+      } else {
+        setPollingState((prev) => ({
+          ...(prev || {}),
+          reconciling: false,
+          reconcileMessage: response.data.message || 'Polar reports the payment is not yet confirmed.',
+        }));
+      }
+    } catch (error) {
+      console.error('Reconcile error:', error);
+      setPollingState((prev) => ({
+        ...(prev || {}),
+        reconciling: false,
+        reconcileMessage: 'Reconciliation failed. Please contact support.',
+      }));
     }
   };
 
@@ -122,25 +157,32 @@ const Funnel = () => {
                   Awaiting webhook confirmation from {pollingState.provider}. This usually takes 10-30 seconds.
                 </p>
                 <div className="flex items-center justify-center gap-2 mb-4">
-                  <span
-                    className="inline-block w-3 h-3 animate-pulse"
-                    style={{ background: '#0A0A0A' }}
-                  />
-                  <span
-                    className="inline-block w-3 h-3 animate-pulse"
-                    style={{ background: '#0A0A0A', animationDelay: '0.2s' }}
-                  />
-                  <span
-                    className="inline-block w-3 h-3 animate-pulse"
-                    style={{ background: '#0A0A0A', animationDelay: '0.4s' }}
-                  />
+                  <span className="inline-block w-3 h-3 animate-pulse" style={{ background: '#0A0A0A' }} />
+                  <span className="inline-block w-3 h-3 animate-pulse" style={{ background: '#0A0A0A', animationDelay: '0.2s' }} />
+                  <span className="inline-block w-3 h-3 animate-pulse" style={{ background: '#0A0A0A', animationDelay: '0.4s' }} />
                 </div>
                 <div
-                  className="text-xs font-mono"
+                  className="text-xs font-mono mb-4"
                   style={{ color: '#737373' }}
                 >
                   Attempt {pollingState.attempt} of {pollingState.max} · Elapsed ~{Math.round((pollingState.attempt * 5))} sec
                 </div>
+                {pollingState.attempt > 6 && pollingState.provider === 'polar' && (
+                  <button
+                    onClick={() => triggerReconcile(pollingState.certUuid)}
+                    disabled={pollingState.reconciling}
+                    className="py-2 px-4 font-bold uppercase text-xs border-2 disabled:opacity-50"
+                    style={{
+                      background: 'transparent',
+                      color: '#0A0A0A',
+                      borderColor: '#0A0A0A',
+                      fontFamily: 'Chivo, sans-serif',
+                    }}
+                    data-testid="reconcile-payment-btn"
+                  >
+                    {pollingState.reconciling ? 'Checking with Polar...' : 'I already paid — verify now'}
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -158,22 +200,40 @@ const Funnel = () => {
                   Your certificate will be issued automatically once confirmed.
                   You can safely close this page and return later.
                 </p>
-                <button
-                  onClick={() => {
-                    setPollingState(null);
-                    navigate('/', { replace: true });
-                  }}
-                  className="py-2 px-6 font-bold uppercase text-sm border-2"
-                  style={{
-                    background: '#0A0A0A',
-                    color: '#F4F4F0',
-                    borderColor: '#0A0A0A',
-                    fontFamily: 'Chivo, sans-serif',
-                  }}
-                  data-testid="polling-dismiss-btn"
-                >
-                  Return to Home
-                </button>
+                <div className="flex flex-col gap-2">
+                  {pollingState.provider === 'polar' && (
+                    <button
+                      onClick={() => triggerReconcile(pollingState.certUuid)}
+                      disabled={pollingState.reconciling}
+                      className="py-2 px-6 font-bold uppercase text-sm border-2 disabled:opacity-50"
+                      style={{
+                        background: '#0A0A0A',
+                        color: '#F4F4F0',
+                        borderColor: '#0A0A0A',
+                        fontFamily: 'Chivo, sans-serif',
+                      }}
+                      data-testid="reconcile-timeout-btn"
+                    >
+                      {pollingState.reconciling ? 'Checking...' : 'Verify Payment with Polar'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setPollingState(null);
+                      navigate('/', { replace: true });
+                    }}
+                    className="py-2 px-6 font-bold uppercase text-sm border-2"
+                    style={{
+                      background: 'transparent',
+                      color: '#0A0A0A',
+                      borderColor: '#0A0A0A',
+                      fontFamily: 'Chivo, sans-serif',
+                    }}
+                    data-testid="polling-dismiss-btn"
+                  >
+                    Return to Home
+                  </button>
+                </div>
               </>
             )}
           </div>
