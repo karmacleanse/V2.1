@@ -85,10 +85,22 @@ User must add webhook endpoint manually in Polar dashboard:
 - ✅ Polar card payments
 - ✅ Plisio crypto payments (replaces failed Cryptomus moderation, 2026-02-20)
 - ✅ QR-code certificates + public verification
-- ✅ Persistent funnel store
+- ✅ Persistent funnel store (Zustand + localStorage, 2026-02-20)
 - ✅ fal.ai personalized minimalist watermark for paid tier (verified visually 2026-02-20)
 - ✅ Incident report (confession text) displayed on certificate and public verification
 - ✅ Resend email delivery: send-now endpoint + background worker for scheduled deliveries (2026-02-20)
+- ✅ Resend domain verified: `info@karmacleanse.online` sends to ANY recipient (2026-02-20)
+- ✅ Resend webhook tracking (Svix HMAC): delivery/open/click/bounce events stored in `email_events` collection
+- ✅ Terms & Conditions page + Compliance Receipt generator (KR-TC-YYYY-XXNNNN)
+- ✅ PDF download (html2canvas + jsPDF, A4)
+- ✅ Social share buttons (Telegram / X / WhatsApp / Copy)
+- ✅ Back buttons on every funnel step + "Start New Ritual" on certificate
+- ✅ Polling overlay (60×5s = 5min, inline UI, no alerts)
+
+### Code Hygiene (2026-02-20)
+- Removed dead code: NOWPayments + Cryptomus clients (230 lines from server.py, 2 files deleted)
+- Cleaned `.env` (removed 7 unused env vars)
+- Switched `SENDER_EMAIL` to verified `info@karmacleanse.online`
 
 ## Pending User Actions
 - ⚠️ Verify `karmacleanse.online` domain at https://resend.com/domains (currently using `onboarding@resend.dev` — can only send to account owner email)
