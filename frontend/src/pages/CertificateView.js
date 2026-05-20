@@ -4,15 +4,39 @@ import QRCode from 'react-qr-code';
 import axios from 'axios';
 import useRitualStore from '../store/ritualStore';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
+
 const CertificateView = () => {
   const registryId = useRitualStore((state) => state.registryId);
+  const certificateUuid = useRitualStore((state) => state.certificateUuid);
   const name = useRitualStore((state) => state.name);
   const severity = useRitualStore((state) => state.severity);
   const tier = useRitualStore((state) => state.tier);
   const status = useRitualStore((state) => state.status);
   const [showDelivery, setShowDelivery] = useState(false);
+  const [sketchUrl, setSketchUrl] = useState(null);
+  const [sketchLoading, setSketchLoading] = useState(false);
 
   const verificationUrl = `${window.location.origin}/verify/${registryId}`;
+
+  // Lazy-load sketch for paid tier only
+  useEffect(() => {
+    if (tier !== 'paid' || !certificateUuid || sketchUrl) return;
+    
+    setSketchLoading(true);
+    axios
+      .post(`${API}/sketch/generate/${certificateUuid}`)
+      .then((res) => {
+        if (res.data?.sketch_url) {
+          setSketchUrl(res.data.sketch_url);
+        }
+      })
+      .catch((err) => {
+        console.error('Sketch generation failed:', err);
+      })
+      .finally(() => setSketchLoading(false));
+  }, [tier, certificateUuid, sketchUrl]);
 
   const getSeverityColor = () => {
     if (!severity) return '#525252';
@@ -52,12 +76,49 @@ const CertificateView = () => {
     >
       {/* Certificate */}
       <div
-        className="border-2 p-8 mb-6"
+        className="border-2 p-8 mb-6 relative overflow-hidden"
         style={{
           background: '#FFFFFF',
           borderColor: '#0A0A0A',
         }}
       >
+        {/* AI-generated sketch watermark (paid tier only) */}
+        {sketchUrl && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '75%',
+              maxWidth: '520px',
+              opacity: 0.18,
+              zIndex: 0,
+              mixBlendMode: 'multiply',
+            }}
+            data-testid="certificate-sketch-watermark"
+          >
+            <img
+              src={sketchUrl}
+              alt=""
+              className="w-full h-auto"
+              style={{ filter: 'grayscale(100%) contrast(1.05)' }}
+            />
+          </div>
+        )}
+        
+        {/* Sketch loading indicator (subtle) */}
+        {sketchLoading && tier === 'paid' && (
+          <div
+            className="absolute top-3 right-3 text-xs font-mono"
+            style={{ color: '#737373', zIndex: 1 }}
+          >
+            <span className="inline-block animate-pulse">⊙ generating imprint...</span>
+          </div>
+        )}
+        
+        {/* Content (above watermark) */}
+        <div className="relative" style={{ zIndex: 2 }}>
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
@@ -220,6 +281,7 @@ const CertificateView = () => {
           <div className="border-2 p-2" style={{ borderColor: '#0A0A0A' }}>
             <QRCode value={verificationUrl} size={100} />
           </div>
+        </div>
         </div>
       </div>
 

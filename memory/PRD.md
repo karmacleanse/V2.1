@@ -22,6 +22,14 @@ Satirical bureaucratic web app — "Emotional Bureaucracy & Administrative Absol
 - `POST /api/crypto/verify` + `POST /api/crypto/poll` + `GET /api/crypto/config` — direct USDC on Polygon
 - `POST /api/nowpayments/invoice` + `POST /api/webhooks/nowpayments` — dormant (not exposed in UI)
 - `POST /api/delivery/schedule` + `POST /api/delivery/send-now` — Resend email
+- `POST /api/sketch/generate/{cert_uuid}` — fal.ai Flux Schnell sketch generation (paid tier only, idempotent)
+
+### AI Watermark (2026-02-20)
+- fal.ai Flux Schnell integration in `sketch_generator.py` generates a personalized minimalist line-art sketch for **paid tier** certificates
+- Symbol selection: keyword match in confession (ghost, lie, cheat, forgot, etc.) → fallback to severity-class symbol set
+- Deterministic seed (severity + confession length) → same confession yields same sketch
+- Rendered as semi-transparent watermark (opacity 0.18, mix-blend-mode multiply) on `CertificateView.js` and `App.js` verification page
+- Cached in `certificates.sketch_url` after first generation
 
 ### Frontend Pages
 - Landing (animated counter, ministry seal)
@@ -75,6 +83,7 @@ User must add webhook endpoint manually in Polar dashboard:
 - ✅ Direct MetaMask USDC on Polygon
 - ✅ QR-code certificates + public verification
 - ✅ Persistent funnel store
+- ✅ fal.ai personalized minimalist watermark for paid tier (verified visually 2026-02-20)
 
 ### P1 (Next)
 - Get real Resend API key for email

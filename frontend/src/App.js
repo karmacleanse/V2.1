@@ -209,7 +209,33 @@ const VerificationPage = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: '#F4F4F0' }}>
-      <div className="max-w-2xl w-full border-2 p-8" style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }} data-testid="verification-page">
+      <div className="max-w-2xl w-full border-2 p-8 relative overflow-hidden" style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }} data-testid="verification-page">
+        {/* AI-generated sketch watermark (paid tier only) */}
+        {certificate.sketch_url && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '75%',
+              maxWidth: '520px',
+              opacity: 0.18,
+              zIndex: 0,
+              mixBlendMode: 'multiply',
+            }}
+            data-testid="verification-sketch-watermark"
+          >
+            <img
+              src={certificate.sketch_url}
+              alt=""
+              className="w-full h-auto"
+              style={{ filter: 'grayscale(100%) contrast(1.05)' }}
+            />
+          </div>
+        )}
+
+        <div className="relative" style={{ zIndex: 2 }}>
         {/* Stamp */}
         <div className="text-center mb-6">
           <div className="inline-block px-6 py-3 border-2 transform -rotate-3"
@@ -301,6 +327,7 @@ const VerificationPage = () => {
           <br />
           Emotional bureaucracy since 2026.
         </p>
+        </div>
       </div>
     </div>
   );

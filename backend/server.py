@@ -33,6 +33,7 @@ from cryptomus_client import (
     normalize_status as cryptomus_normalize_status,
     CRYPTOMUS_PRICING,
 )
+from sketch_generator import generate_sketch
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse
 )
@@ -662,6 +663,47 @@ async def cryptomus_webhook(request: Request):
             logger.info(f"Certificate {cert_uuid} upgraded via Cryptomus ({payer_currency})")
     
     return {'received': True}
+
+
+@api_router.post("/sketch/generate/{cert_uuid}")
+async def generate_sketch_endpoint(cert_uuid: str):
+    """
+    Generate AI sketch for a paid certificate (idempotent).
+    Returns existing sketch_url if already generated.
+    """
+    cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    # Only paid certificates get sketches
+    if cert.get('tier') != 'paid':
+        return {'sketch_url': None, 'reason': 'Free tier - no sketch'}
+    
+    # If already generated, return cached
+    if cert.get('sketch_url'):
+        return {'sketch_url': cert['sketch_url'], 'cached': True}
+    
+    # Generate
+    result = await generate_sketch(
+        severity_class=cert.get('severity_class', 'Moderate'),
+        confession=cert.get('confession', ''),
+    )
+    
+    if result.get('error'):
+        logger.error(f"Sketch gen failed for {cert_uuid}: {result['error']}")
+        return {'sketch_url': None, 'error': result['error']}
+    
+    # Save to DB
+    await db.certificates.update_one(
+        {'uuid': cert_uuid},
+        {'$set': {
+            'sketch_url': result['url'],
+            'sketch_prompt': result.get('prompt'),
+            'sketch_seed': result.get('seed'),
+        }}
+    )
+    
+    return {'sketch_url': result['url'], 'cached': False}
 
 
 @api_router.post("/delivery/schedule")
