@@ -140,7 +140,7 @@ async def get_certificate(cert_uuid: str):
 @api_router.get("/verify/{registry_id}")
 async def verify_certificate(registry_id: str):
     """Verify certificate by registry ID (public)"""
-    cert = await db.certificates.find_one({'registry_id': registry_id}, {'_id': 0, 'confession': 0})
+    cert = await db.certificates.find_one({'registry_id': registry_id}, {'_id': 0})
     
     if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found in registry")

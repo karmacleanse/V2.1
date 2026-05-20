@@ -11,6 +11,7 @@ const CertificateView = () => {
   const registryId = useRitualStore((state) => state.registryId);
   const certificateUuid = useRitualStore((state) => state.certificateUuid);
   const name = useRitualStore((state) => state.name);
+  const confession = useRitualStore((state) => state.confession);
   const severity = useRitualStore((state) => state.severity);
   const tier = useRitualStore((state) => state.tier);
   const status = useRitualStore((state) => state.status);
@@ -173,6 +174,29 @@ const CertificateView = () => {
             {name || 'Anonymous Entity'}
           </div>
         </div>
+
+        {/* Incident Report (confession) */}
+        {confession && (
+          <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+            <div
+              className="text-xs uppercase font-bold tracking-widest mb-2"
+              style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+            >
+              Incident Report
+            </div>
+            <blockquote
+              className="text-sm font-mono whitespace-pre-wrap border-l-4 pl-3 py-1"
+              style={{
+                color: '#0A0A0A',
+                borderColor: '#0A0A0A',
+                background: 'rgba(244,244,240,0.6)',
+              }}
+              data-testid="certificate-confession-text"
+            >
+              {confession}
+            </blockquote>
+          </div>
+        )}
 
         {/* Severity Classification */}
         <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
