@@ -33,6 +33,12 @@ from cryptomus_client import (
     normalize_status as cryptomus_normalize_status,
     CRYPTOMUS_PRICING,
 )
+from plisio_client import (
+    create_invoice as plisio_create_invoice,
+    verify_webhook_signature as plisio_verify_signature,
+    normalize_status as plisio_normalize_status,
+    PLISIO_PRICING,
+)
 from sketch_generator import generate_sketch
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse
@@ -661,6 +667,125 @@ async def cryptomus_webhook(request: Request):
                 }}
             )
             logger.info(f"Certificate {cert_uuid} upgraded via Cryptomus ({payer_currency})")
+    
+    return {'received': True}
+
+
+@api_router.post("/plisio/invoice")
+async def plisio_invoice_endpoint(request: CheckoutRequest):
+    """Create Plisio crypto invoice (BTC, LTC, USDT TRC/BEP, TRX, TON, DOGE etc.)"""
+    if request.tier not in PLISIO_PRICING:
+        raise HTTPException(status_code=400, detail="Invalid tier")
+    
+    cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    try:
+        result = await plisio_create_invoice(
+            tier=request.tier,
+            certificate_uuid=request.certificate_uuid,
+            origin_url=request.origin_url,
+            backend_url=BASE_URL,
+        )
+        
+        transaction = {
+            'session_id': result['txn_id'],
+            'plisio_txn_id': result['txn_id'],
+            'order_id': result['order_id'],
+            'certificate_uuid': request.certificate_uuid,
+            'amount': result['amount_usd'],
+            'currency': 'usd',
+            'tier': request.tier,
+            'payment_method': 'plisio',
+            'status': 'pending',
+            'payment_status': 'unpaid',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+        }
+        await db.payment_transactions.insert_one(transaction)
+        
+        logger.info(f"Plisio invoice {result['txn_id']} for cert {request.certificate_uuid}")
+        return {'url': result['url'], 'txn_id': result['txn_id']}
+        
+    except Exception as e:
+        logger.error(f"Plisio invoice error: {e}")
+        raise HTTPException(status_code=500, detail=f"Invoice creation failed: {str(e)}")
+
+
+@api_router.get("/plisio/status/{certificate_uuid}")
+async def plisio_status(certificate_uuid: str):
+    """Check Plisio payment status by certificate uuid"""
+    cert = await db.certificates.find_one({'uuid': certificate_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    return {
+        'tier': cert.get('tier', 'free'),
+        'status': cert.get('status', 'temporary'),
+        'is_paid': cert.get('tier') == 'paid',
+    }
+
+
+@api_router.api_route("/webhooks/plisio", methods=["GET", "POST"])
+async def plisio_webhook(request: Request):
+    """
+    Handle Plisio webhook (signature verified via HMAC-SHA256 over JSON payload).
+    Plisio sends POST with JSON body containing `verify_hash`.
+    """
+    try:
+        if request.method == 'POST':
+            payload = await request.json()
+        else:
+            payload = dict(request.query_params)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    
+    received_hash = payload.get('verify_hash')
+    if not received_hash:
+        logger.warning("Plisio webhook missing verify_hash")
+        raise HTTPException(status_code=400, detail="Missing verify_hash")
+    
+    if not plisio_verify_signature(payload, received_hash):
+        logger.error(f"Plisio webhook invalid signature: txn={payload.get('txn_id')}")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+    
+    status = payload.get('status', '')
+    order_id = payload.get('order_number', '')
+    amount = payload.get('source_amount') or payload.get('amount') or '0'
+    paid_currency = payload.get('currency', 'crypto')
+    txn_id = payload.get('txn_id', '')
+    
+    logger.info(f"Plisio webhook: status={status}, order={order_id}, txn={txn_id}")
+    
+    cert_uuid = order_id.split('_')[0] if order_id else None
+    if not cert_uuid:
+        raise HTTPException(status_code=400, detail="Invalid order_number")
+    
+    normalized = plisio_normalize_status(status)
+    
+    await db.payment_transactions.update_one(
+        {'order_id': order_id},
+        {'$set': {
+            'payment_status': normalized,
+            'plisio_status': status,
+            'paid_amount': amount,
+            'paid_currency': paid_currency,
+        }}
+    )
+    
+    if normalized == 'paid':
+        cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
+        if cert and cert.get('tier') == 'free':
+            await db.certificates.update_one(
+                {'uuid': cert_uuid},
+                {'$set': {
+                    'tier': 'paid',
+                    'status': 'certified',
+                    'payment_amount': float(amount) if amount else 0.0,
+                    'payment_method': f'plisio_{paid_currency}',
+                }}
+            )
+            logger.info(f"Certificate {cert_uuid} upgraded via Plisio ({paid_currency})")
     
     return {'received': True}
 

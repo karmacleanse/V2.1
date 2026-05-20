@@ -76,14 +76,18 @@ User must add webhook endpoint manually in Polar dashboard:
 
 ## Prioritized Backlog
 
+- **Plisio** — crypto payment gateway, integrated 2026-02-20
+- ✅ Plisio crypto payments (BTC, LTC, BCH, DOGE, USDT TRC/BEP, TRX, TON и др.) — заменил Cryptomus (отказ в модерации)
+
 ### P0 (Done)
 - ✅ Full 7-step funnel
 - ✅ Brutalist UI
 - ✅ Polar card payments
-- ✅ Direct MetaMask USDC on Polygon
+- ✅ Plisio crypto payments (replaces failed Cryptomus moderation, 2026-02-20)
 - ✅ QR-code certificates + public verification
 - ✅ Persistent funnel store
 - ✅ fal.ai personalized minimalist watermark for paid tier (verified visually 2026-02-20)
+- ✅ Incident report (confession text) displayed on certificate and public verification
 
 ### P1 (Next)
 - Get real Resend API key for email

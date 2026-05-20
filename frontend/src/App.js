@@ -27,6 +27,7 @@ const Funnel = () => {
     const success = params.get('success');
     const polarSuccess = params.get('polar_success');
     const cryptomusSuccess = params.get('cryptomus_success');
+    const plisioSuccess = params.get('plisio_success');
     const sessionId = params.get('session_id');
     const checkoutId = params.get('checkout_id');
     const certUuid = params.get('cert_uuid');
@@ -37,8 +38,30 @@ const Funnel = () => {
       pollPolarStatus(checkoutId);
     } else if (cryptomusSuccess === 'true' && certUuid) {
       pollCryptomusStatus(certUuid);
+    } else if (plisioSuccess === 'true' && certUuid) {
+      pollPlisioStatus(certUuid);
     }
   }, [location]);
+
+  const pollPlisioStatus = async (certUuid, attempts = 0) => {
+    const maxAttempts = 60;
+    if (attempts >= maxAttempts) {
+      alert('Payment processing — check back in 10 minutes.');
+      return;
+    }
+    try {
+      const response = await axios.get(`${API}/plisio/status/${certUuid}`);
+      if (response.data.is_paid) {
+        setStep('certificate');
+        navigate('/', { replace: true });
+      } else {
+        setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), 10000);
+      }
+    } catch (error) {
+      console.error('Plisio poll error:', error);
+      setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), 10000);
+    }
+  };
 
   const pollCryptomusStatus = async (certUuid, attempts = 0) => {
     const maxAttempts = 60;

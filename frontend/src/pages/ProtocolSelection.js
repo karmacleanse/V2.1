@@ -99,7 +99,7 @@ const ProtocolSelection = () => {
     setLoading(true);
     try {
       const originUrl = window.location.origin;
-      const response = await axios.post(`${API}/cryptomus/payment`, {
+      const response = await axios.post(`${API}/plisio/invoice`, {
         tier: tier.tier_key,
         certificate_uuid: certificateUuid,
         origin_url: originUrl,
@@ -232,7 +232,7 @@ const ProtocolSelection = () => {
         className="text-xs text-center mt-8 font-mono"
         style={{ color: '#737373' }}
       >
-        Card payments via Polar.sh • Crypto via Cryptomus (100+ coins, USDT/BTC/ETH/TRX/TON)
+        Card payments via Polar.sh • Crypto via Plisio (BTC, LTC, USDT TRC/BEP, TRX, TON, DOGE & more)
       </p>
     </motion.div>
   );
