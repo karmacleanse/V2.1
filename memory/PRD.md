@@ -88,6 +88,11 @@ User must add webhook endpoint manually in Polar dashboard:
 - ✅ Persistent funnel store
 - ✅ fal.ai personalized minimalist watermark for paid tier (verified visually 2026-02-20)
 - ✅ Incident report (confession text) displayed on certificate and public verification
+- ✅ Resend email delivery: send-now endpoint + background worker for scheduled deliveries (2026-02-20)
+
+## Pending User Actions
+- ⚠️ Verify `karmacleanse.online` domain at https://resend.com/domains (currently using `onboarding@resend.dev` — can only send to account owner email)
+- ⚠️ Plisio: increase Underpayment allowed % from 5% to 10-15% to handle crypto rate volatility
 
 ### P1 (Next)
 - Get real Resend API key for email

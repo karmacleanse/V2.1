@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import uuid as uuid_lib
+from pydantic import BaseModel, EmailStr
 
 from models import (
     Certificate, CertificateCreate, AnalyzeRequest, 
@@ -871,104 +872,216 @@ async def schedule_delivery(delivery: DeliveryRequest):
     }
 
 
-@api_router.post("/delivery/send-now")
-async def send_certificate_email(certificate_uuid: str, recipient_email: str, message: Optional[str] = None):
-    """Send certificate email immediately (for testing or instant delivery)"""
+def _build_certificate_email_html(cert: dict, message: str = None) -> str:
+    """Build branded HTML email with cert details + AI sketch watermark."""
+    verification_url = f"{BASE_URL}/verify/{cert['registry_id']}"
+    severity_color = {
+        'Critical': '#D92D20',
+        'High': '#B45309',
+        'Moderate': '#525252',
+    }.get(cert.get('severity_class', 'Low'), '#15803D')
     
-    # Get certificate
-    cert = await db.certificates.find_one({'uuid': certificate_uuid}, {'_id': 0})
+    sketch_block = ''
+    if cert.get('sketch_url'):
+        sketch_block = f'''
+        <tr><td align="center" style="padding:20px 0;">
+            <img src="{cert['sketch_url']}" alt="" width="240"
+                 style="display:block;opacity:0.85;filter:grayscale(100%);max-width:240px;height:auto;"/>
+            <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;margin-top:8px;">
+                Personalized Imprint
+            </div>
+        </td></tr>'''
+    
+    confession_block = ''
+    if cert.get('confession'):
+        confession_block = f'''
+        <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+            <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">
+                Incident Report
+            </div>
+            <blockquote style="margin:0;padding:10px 14px;border-left:3px solid #0A0A0A;background:#F4F4F0;font-family:monospace;font-size:13px;color:#0A0A0A;white-space:pre-wrap;">
+                {cert['confession']}
+            </blockquote>
+        </td></tr>'''
+    
+    message_block = ''
+    if message:
+        message_block = f'''
+        <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+            <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">
+                Accompanying Notice
+            </div>
+            <div style="font-size:14px;color:#0A0A0A;line-height:1.5;">{message}</div>
+        </td></tr>'''
+    
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"/></head>
+<body style="margin:0;padding:24px;background:#F4F4F0;font-family:Arial,Helvetica,sans-serif;">
+<table cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:600px;margin:0 auto;">
+    <tr><td style="background:#FFFFFF;border:2px solid #0A0A0A;padding:28px;">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+            <tr><td>
+                <div style="font-size:24px;font-weight:900;text-transform:uppercase;letter-spacing:-1px;color:#0A0A0A;">Karma Cleanse</div>
+                <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;margin-top:4px;">Official Certificate v2.1</div>
+            </td></tr>
+            <tr><td style="padding-top:20px;border-top:1px solid #E5E5DF;margin-top:20px;">&nbsp;</td></tr>
+            <tr><td>
+                <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;">Registry ID</div>
+                <div style="font-size:22px;font-weight:900;color:#0A0A0A;margin-top:4px;">{cert['registry_id']}</div>
+            </td></tr>
+            <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+                <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;">Subject</div>
+                <div style="font-family:monospace;font-size:14px;color:#0A0A0A;margin-top:4px;">{cert.get('name') or 'Anonymous Entity'}</div>
+            </td></tr>
+            {confession_block}
+            <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+                <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">Classification</div>
+                <span style="display:inline-block;padding:6px 14px;border:2px solid {severity_color};color:{severity_color};font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:2px;">CLASS {cert['severity_class'].upper()}</span>
+            </td></tr>
+            <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+                <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                    <tr>
+                        <td width="50%">
+                            <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;">Stability</div>
+                            <div style="font-family:monospace;font-size:13px;color:#0A0A0A;margin-top:4px;">{cert['stability']}</div>
+                        </td>
+                        <td width="50%">
+                            <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;">Risk Score</div>
+                            <div style="font-family:monospace;font-size:13px;color:#0A0A0A;margin-top:4px;">{cert['risk_score']}/100</div>
+                        </td>
+                    </tr>
+                </table>
+            </td></tr>
+            <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+                <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;">Protocol Applied</div>
+                <div style="font-family:monospace;font-size:13px;color:#0A0A0A;margin-top:4px;">{cert['protocol']}</div>
+            </td></tr>
+            <tr><td style="padding-top:16px;border-top:1px solid #E5E5DF;">
+                <div style="font-family:monospace;font-size:10px;color:#737373;letter-spacing:2px;text-transform:uppercase;">Status</div>
+                <div style="font-family:monospace;font-size:13px;font-weight:bold;color:{'#15803D' if cert.get('tier')=='paid' else '#B45309'};margin-top:4px;text-transform:uppercase;">
+                    {cert.get('status','Issued').upper()} — {cert.get('tier','free').upper()} TIER
+                </div>
+            </td></tr>
+            {sketch_block}
+            {message_block}
+            <tr><td style="padding-top:20px;border-top:2px solid #0A0A0A;margin-top:20px;text-align:center;">
+                <a href="{verification_url}" style="display:inline-block;padding:12px 24px;background:#0A0A0A;color:#FFFFFF;text-decoration:none;font-weight:900;text-transform:uppercase;letter-spacing:2px;font-size:12px;">Verify Certificate</a>
+                <div style="font-family:monospace;font-size:10px;color:#737373;margin-top:12px;word-break:break-all;">{verification_url}</div>
+            </td></tr>
+            <tr><td style="padding-top:20px;text-align:center;">
+                <div style="font-family:monospace;font-size:10px;color:#737373;line-height:1.6;">
+                    This certificate represents administrative absolution only.<br/>
+                    Not legally binding. Emotional bureaucracy since 2026.
+                </div>
+            </td></tr>
+        </table>
+    </td></tr>
+</table>
+</body></html>"""
+
+
+async def _send_certificate_email_via_resend(cert: dict, recipient_email: str, message: str = None) -> dict:
+    """Internal helper: actually sends the email via Resend API."""
+    html_content = _build_certificate_email_html(cert, message)
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [recipient_email],
+        "subject": f"Karma Cleanse Certificate \u2014 {cert['registry_id']}",
+        "html": html_content,
+    }
+    email_result = await asyncio.to_thread(resend.Emails.send, params)
+    return email_result
+
+
+class SendNowRequest(BaseModel):
+    certificate_uuid: str
+    recipient_email: EmailStr
+    message: Optional[str] = None
+
+
+@api_router.post("/delivery/send-now")
+async def send_certificate_email_now(req: SendNowRequest):
+    """Send certificate email immediately."""
+    cert = await db.certificates.find_one({'uuid': req.certificate_uuid}, {'_id': 0})
     if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found")
-    
-    # Build verification URL
-    verification_url = f"{BASE_URL}/verify/{cert['registry_id']}"
-    
-    # Create HTML email
-    message_html = f'<div class="field"><div class="label">Message</div><div class="value">{message}</div></div>' if message else ''
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            body {{ font-family: 'IBM Plex Mono', monospace; background: #F4F4F0; padding: 40px; }}
-            .container {{ max-width: 600px; margin: 0 auto; background: white; border: 2px solid #0A0A0A; padding: 40px; }}
-            .header {{ text-transform: uppercase; font-weight: 900; font-size: 24px; margin-bottom: 20px; }}
-            .registry-id {{ font-size: 18px; font-weight: bold; color: #D92D20; margin: 20px 0; }}
-            .field {{ margin: 10px 0; font-size: 14px; }}
-            .label {{ text-transform: uppercase; font-weight: bold; font-size: 11px; letter-spacing: 0.1em; }}
-            .value {{ font-size: 13px; }}
-            .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #0A0A0A; font-size: 11px; color: #737373; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">Karma Cleanse Certificate</div>
-            <div class="registry-id">Registry ID: {cert['registry_id']}</div>
-            
-            <div class="field">
-                <div class="label">Subject</div>
-                <div class="value">{cert.get('name', 'Anonymous Entity')}</div>
-            </div>
-            
-            <div class="field">
-                <div class="label">Severity Classification</div>
-                <div class="value">{cert['severity_class']}</div>
-            </div>
-            
-            <div class="field">
-                <div class="label">Emotional Stability</div>
-                <div class="value">{cert['stability']}</div>
-            </div>
-            
-            <div class="field">
-                <div class="label">Risk Score</div>
-                <div class="value">{cert['risk_score']}/100</div>
-            </div>
-            
-            <div class="field">
-                <div class="label">Protocol</div>
-                <div class="value">{cert['protocol']}</div>
-            </div>
-            
-            <div class="field">
-                <div class="label">Status</div>
-                <div class="value">{cert['status'].upper()} - {cert['tier'].upper()} TIER</div>
-            </div>
-            
-            {message_html}
-            
-            <div class="footer">
-                Verify this certificate: <a href="{verification_url}">{verification_url}</a><br>
-                This is an official Karma Cleanse document. Emotional bureaucracy since 2026.
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    
-    # Send email via Resend
     try:
-        params = {
-            "from": SENDER_EMAIL,
-            "to": [recipient_email],
-            "subject": f"Karma Cleanse Certificate \u2014 {cert['registry_id']}",
-            "html": html_content
-        }
-        
-        email_result = await asyncio.to_thread(resend.Emails.send, params)
-        
-        logger.info(f"Email sent to {recipient_email}, email_id: {email_result.get('id')}")
-        
-        return {
-            'sent': True,
-            'recipient': recipient_email,
-            'email_id': email_result.get('id'),
-        }
-        
+        result = await _send_certificate_email_via_resend(cert, req.recipient_email, req.message)
+        logger.info(f"Email sent to {req.recipient_email}, id={result.get('id')}")
+        return {'sent': True, 'recipient': req.recipient_email, 'email_id': result.get('id')}
     except Exception as e:
-        logger.error(f"Failed to send email: {str(e)}")
+        logger.error(f"Send-now failed: {e}")
         raise HTTPException(status_code=500, detail=f"Email sending failed: {str(e)}")
+
+
+# --- Background scheduler -------------------------------------------------
+async def _scheduled_delivery_worker():
+    """Polls scheduled_deliveries every 30s, sends due ones via Resend."""
+    while True:
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor = db.scheduled_deliveries.find(
+                {'sent': False, 'send_at': {'$lte': now_iso}},
+                {'_id': 0},
+            )
+            due = await cursor.to_list(length=50)
+            for d in due:
+                cert = await db.certificates.find_one(
+                    {'uuid': d['certificate_uuid']}, {'_id': 0}
+                )
+                if not cert:
+                    await db.scheduled_deliveries.update_one(
+                        {'certificate_uuid': d['certificate_uuid'],
+                         'recipient_email': d['recipient_email'],
+                         'send_at': d['send_at']},
+                        {'$set': {'sent': True, 'failed': True, 'error': 'cert_not_found',
+                                  'sent_at': datetime.now(timezone.utc).isoformat()}}
+                    )
+                    continue
+                try:
+                    result = await _send_certificate_email_via_resend(
+                        cert, d['recipient_email'], d.get('message')
+                    )
+                    await db.scheduled_deliveries.update_one(
+                        {'certificate_uuid': d['certificate_uuid'],
+                         'recipient_email': d['recipient_email'],
+                         'send_at': d['send_at']},
+                        {'$set': {
+                            'sent': True,
+                            'sent_at': datetime.now(timezone.utc).isoformat(),
+                            'email_id': result.get('id'),
+                        }}
+                    )
+                    logger.info(f"[worker] sent scheduled delivery to {d['recipient_email']} id={result.get('id')}")
+                except Exception as send_err:
+                    logger.error(f"[worker] failed delivery to {d['recipient_email']}: {send_err}")
+                    await db.scheduled_deliveries.update_one(
+                        {'certificate_uuid': d['certificate_uuid'],
+                         'recipient_email': d['recipient_email'],
+                         'send_at': d['send_at']},
+                        {'$set': {
+                            'last_error': str(send_err),
+                            'last_attempt_at': datetime.now(timezone.utc).isoformat(),
+                            'attempts': d.get('attempts', 0) + 1,
+                        }}
+                    )
+                    # Mark as failed after 5 attempts
+                    if d.get('attempts', 0) + 1 >= 5:
+                        await db.scheduled_deliveries.update_one(
+                            {'certificate_uuid': d['certificate_uuid'],
+                             'recipient_email': d['recipient_email'],
+                             'send_at': d['send_at']},
+                            {'$set': {'sent': True, 'failed': True}}
+                        )
+        except Exception as e:
+            logger.error(f"[worker] loop error: {e}")
+        await asyncio.sleep(30)
+
+
+@app.on_event("startup")
+async def _start_delivery_worker():
+    asyncio.create_task(_scheduled_delivery_worker())
+    logger.info("Scheduled delivery worker started (interval=30s)")
 
 
 # Include the router in the main app
