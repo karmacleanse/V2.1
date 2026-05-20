@@ -308,6 +308,28 @@ const VerificationPage = () => {
           </div>
         )}
 
+        {certificate.receipt_type === 'tc_acknowledgment' && (
+          <>
+            <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+              <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+                Declared Jurisdiction
+              </div>
+              <div className="text-base font-mono">{certificate.jurisdiction || 'Unspecified'}</div>
+            </div>
+
+            <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+              <div className="text-xs uppercase font-bold tracking-widest mb-2" style={{ color: '#737373' }}>
+                Documents Acknowledged
+              </div>
+              <ul className="pl-6 text-sm font-mono space-y-1" style={{ listStyleType: 'square' }}>
+                {(certificate.acknowledgments || []).map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+
         <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
           <div className="text-xs uppercase font-bold tracking-widest mb-2" style={{ color: '#737373' }}>
             Classification
@@ -320,20 +342,22 @@ const VerificationPage = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
-          <div>
-            <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
-              Stability
+        {certificate.receipt_type !== 'tc_acknowledgment' && (
+          <div className="grid grid-cols-2 gap-4 border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+            <div>
+              <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+                Stability
+              </div>
+              <div className="text-sm font-mono">{certificate.stability}</div>
             </div>
-            <div className="text-sm font-mono">{certificate.stability}</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
-              Risk Score
+            <div>
+              <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>
+                Risk Score
+              </div>
+              <div className="text-sm font-mono">{certificate.risk_score}/100</div>
             </div>
-            <div className="text-sm font-mono">{certificate.risk_score}/100</div>
           </div>
-        </div>
+        )}
 
         <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
           <div className="text-xs uppercase font-bold tracking-widest mb-1" style={{ color: '#737373' }}>

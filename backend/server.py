@@ -18,7 +18,7 @@ from models import (
     CheckoutRequest, DeliveryRequest, PaymentTransaction
 )
 from severity_analyzer import analyze_severity
-from registry_id_generator import generate_registry_id
+from registry_id_generator import generate_registry_id, generate_compliance_id
 from polar_payment import (
     create_polar_checkout, verify_polar_webhook, POLAR_PRODUCTS, POLAR_PRICING
 )
@@ -130,6 +130,60 @@ async def create_certificate(cert_data: CertificateCreate):
         'registry_id': registry_id,
         'status': 'temporary',
         'tier': 'free',
+    }
+
+
+class ComplianceReceiptRequest(BaseModel):
+    name: Optional[str] = None  # optional — Anonymous Acknowledger if blank
+    acknowledgments: Optional[list] = None  # which sections were acknowledged
+    jurisdiction: Optional[str] = None  # user-stated jurisdiction (free text)
+
+
+@api_router.post("/compliance-receipt")
+async def create_compliance_receipt(request: ComplianceReceiptRequest):
+    """Issue a satirical 'Acknowledgment of Operational Terms — Filed in Triplicate'."""
+    cert_uuid = str(uuid_lib.uuid4())
+    registry_id = generate_compliance_id()
+
+    name = (request.name or '').strip() or 'Anonymous Acknowledger'
+
+    receipt = {
+        'uuid': cert_uuid,
+        'registry_id': registry_id,
+        'name': name,
+        'confession': None,
+        'severity_class': 'Compliance',
+        'stability': 'Procedurally Compliant',
+        'risk_score': 0,
+        'protocol': 'Acknowledgment of Operational Terms — Filed in Triplicate',
+        'status': 'Acknowledged',
+        'tier': 'compliance',
+        'receipt_type': 'tc_acknowledgment',
+        'jurisdiction': request.jurisdiction or 'Unspecified',
+        'acknowledgments': request.acknowledgments or [
+            'Operational Terms',
+            'Jurisdictional Disclaimer',
+            'Privacy Policy',
+            'Contribution Policy',
+        ],
+        'payment_amount': 0.0,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+    await db.certificates.insert_one(receipt)
+
+    logger.info(f"Compliance receipt {registry_id} for {name}")
+
+    return {
+        'uuid': cert_uuid,
+        'registry_id': registry_id,
+        'name': name,
+        'status': 'Acknowledged',
+        'tier': 'compliance',
+        'protocol': receipt['protocol'],
+        'jurisdiction': receipt['jurisdiction'],
+        'acknowledgments': receipt['acknowledgments'],
+        'created_at': receipt['created_at'],
     }
 
 

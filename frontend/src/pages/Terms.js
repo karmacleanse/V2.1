@@ -1,4 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import axios from 'axios';
+import QRCode from 'react-qr-code';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 const Section = ({ number, title, children }) => (
   <section className="mb-10" data-testid={`terms-section-${number}`}>
@@ -54,7 +60,303 @@ const Doc = ({ title, revision, children }) => (
   </div>
 );
 
+const ComplianceReceipt = ({ receipt }) => {
+  const verificationUrl = `${window.location.origin}/verify/${receipt.registry_id}`;
+  const issuedAt = new Date(receipt.created_at).toLocaleString();
+  return (
+    <div
+      className="border-2 p-6 sm:p-10 mb-8 relative"
+      style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }}
+      data-testid="compliance-receipt"
+    >
+      {/* Triplicate copy marks (bureaucratic flair) */}
+      <div
+        className="absolute top-3 right-3 text-xs font-mono"
+        style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+      >
+        COPY 1 OF 3
+      </div>
+
+      <div className="mb-6 pb-6" style={{ borderBottom: '2px solid #0A0A0A' }}>
+        <div
+          className="inline-block px-4 py-2 border-2 transform -rotate-2 mb-4"
+          style={{ borderColor: '#15803D', color: '#15803D' }}
+        >
+          <span
+            className="text-sm font-black uppercase tracking-widest"
+            style={{ fontFamily: 'Chivo, sans-serif' }}
+          >
+            ACKNOWLEDGED
+          </span>
+        </div>
+        <h2
+          className="text-2xl sm:text-3xl font-black uppercase tracking-tight"
+          style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}
+        >
+          Compliance Receipt
+        </h2>
+        <div
+          className="text-xs uppercase tracking-widest mt-2"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Filed in Triplicate · Form T&C-7
+        </div>
+      </div>
+
+      {/* Registry */}
+      <div className="mb-4">
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-1"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Compliance Registry ID
+        </div>
+        <div
+          className="text-2xl font-black tracking-tight"
+          style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}
+          data-testid="compliance-registry-id"
+        >
+          {receipt.registry_id}
+        </div>
+      </div>
+
+      {/* Acknowledger */}
+      <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-1"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Acknowledger
+        </div>
+        <div className="text-base font-mono" style={{ color: '#0A0A0A' }}>
+          {receipt.name}
+        </div>
+      </div>
+
+      {/* Jurisdiction */}
+      <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-1"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Declared Jurisdiction
+        </div>
+        <div className="text-base font-mono" style={{ color: '#0A0A0A' }}>
+          {receipt.jurisdiction}
+        </div>
+      </div>
+
+      {/* Documents acknowledged */}
+      <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-2"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Documents Acknowledged
+        </div>
+        <ul
+          className="pl-6 text-sm font-mono space-y-1"
+          style={{ listStyleType: 'square', color: '#0A0A0A' }}
+        >
+          {(receipt.acknowledgments || []).map((a, i) => (
+            <li key={i}>{a}</li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Timestamp */}
+      <div className="border-t-2 pt-4 mb-4" style={{ borderColor: '#E5E5DF' }}>
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-1"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Filed At
+        </div>
+        <div className="text-sm font-mono" style={{ color: '#0A0A0A' }}>
+          {issuedAt}
+        </div>
+      </div>
+
+      {/* Procedural notice */}
+      <div className="border-t-2 pt-4 mb-6" style={{ borderColor: '#E5E5DF' }}>
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-1"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Procedural Notice
+        </div>
+        <p
+          className="text-sm font-mono leading-relaxed"
+          style={{ color: '#0A0A0A' }}
+        >
+          The above-named party has procedurally acknowledged the operational
+          documents bundle associated with Karma Cleanse. This receipt has no
+          legal weight and is issued solely for symbolic completeness.
+        </p>
+      </div>
+
+      {/* QR Code */}
+      <div
+        className="border-t-2 pt-6 flex justify-between items-center gap-4"
+        style={{ borderColor: '#E5E5DF' }}
+      >
+        <div className="min-w-0 flex-1">
+          <div
+            className="text-xs uppercase font-bold tracking-widest mb-2"
+            style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+          >
+            Verification
+          </div>
+          <div
+            className="text-xs font-mono break-all"
+            style={{ color: '#525252' }}
+          >
+            {verificationUrl}
+          </div>
+        </div>
+        <div
+          className="border-2 p-2 shrink-0"
+          style={{ borderColor: '#0A0A0A' }}
+        >
+          <QRCode value={verificationUrl} size={88} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+const ComplianceForm = ({ onIssued }) => {
+  const [name, setName] = useState('');
+  const [jurisdiction, setJurisdiction] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await axios.post(`${API}/compliance-receipt`, {
+        name: name.trim() || null,
+        jurisdiction: jurisdiction.trim() || null,
+      });
+      onIssued(res.data);
+    } catch (err) {
+      console.error(err);
+      setError('Could not issue receipt. Please retry.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="border-2 p-6 sm:p-8 mb-8"
+      style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }}
+      data-testid="compliance-form"
+    >
+      <div className="mb-6">
+        <div
+          className="text-xs uppercase font-bold tracking-widest"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Optional Procedure
+        </div>
+        <h2
+          className="text-xl sm:text-2xl font-black uppercase tracking-tight mt-2"
+          style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}
+        >
+          Generate Compliance Receipt
+        </h2>
+        <p
+          className="text-sm mt-2 font-mono leading-relaxed"
+          style={{ color: '#525252' }}
+        >
+          Procedurally acknowledge the documents above and receive a satirical
+          "Acknowledgment of Operational Terms — Filed in Triplicate" certificate
+          with a unique Compliance Registry ID.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label
+            className="text-xs uppercase font-bold tracking-widest mb-2 block"
+            style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+          >
+            Acknowledger Name (optional)
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Leave blank for anonymous filing"
+            maxLength={120}
+            className="w-full border-2 px-4 py-2 text-sm font-mono"
+            style={{
+              background: '#F4F4F0',
+              borderColor: '#0A0A0A',
+              color: '#0A0A0A',
+            }}
+            data-testid="compliance-name-input"
+          />
+        </div>
+        <div>
+          <label
+            className="text-xs uppercase font-bold tracking-widest mb-2 block"
+            style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+          >
+            Declared Jurisdiction (optional)
+          </label>
+          <input
+            type="text"
+            value={jurisdiction}
+            onChange={(e) => setJurisdiction(e.target.value)}
+            placeholder="e.g. Earth, EU, Russian Federation, Off-grid"
+            maxLength={120}
+            className="w-full border-2 px-4 py-2 text-sm font-mono"
+            style={{
+              background: '#F4F4F0',
+              borderColor: '#0A0A0A',
+              color: '#0A0A0A',
+            }}
+            data-testid="compliance-jurisdiction-input"
+          />
+        </div>
+
+        {error && (
+          <div
+            className="text-xs font-mono"
+            style={{ color: '#D92D20' }}
+            data-testid="compliance-error"
+          >
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-3 font-bold uppercase text-sm border-2 transition-colors disabled:opacity-50"
+          style={{
+            background: '#0A0A0A',
+            color: '#F4F4F0',
+            borderColor: '#0A0A0A',
+            fontFamily: 'Chivo, sans-serif',
+          }}
+          data-testid="generate-compliance-btn"
+        >
+          {loading ? 'Filing in Triplicate...' : 'Generate Compliance Receipt'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+
 const Terms = () => {
+  const [receipt, setReceipt] = useState(null);
   return (
     <div
       className="min-h-screen px-4 py-10"
@@ -256,6 +558,13 @@ const Terms = () => {
             <p>Participation implies acknowledgment of the symbolic and fictional nature of the platform.</p>
           </div>
         </Doc>
+
+        {/* Compliance Receipt Generator */}
+        {receipt ? (
+          <ComplianceReceipt receipt={receipt} />
+        ) : (
+          <ComplianceForm onIssued={setReceipt} />
+        )}
 
         {/* Footer back-link */}
         <div className="text-center pt-4 pb-8">
