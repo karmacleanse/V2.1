@@ -1082,6 +1082,134 @@ async def _start_delivery_worker():
     logger.info("Scheduled delivery worker started (interval=30s)")
 
 
+# --- Admin Stats Dashboard ----------------------------------------------
+ADMIN_KEY = os.environ.get('ADMIN_KEY')
+
+
+def require_admin(key: str):
+    if not ADMIN_KEY or key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@api_router.get("/admin/stats")
+async def admin_stats(key: str):
+    """Aggregated analytics dashboard data."""
+    require_admin(key)
+
+    now = datetime.now(timezone.utc)
+    day_ago = (now - timedelta(days=1)).isoformat()
+    week_ago = (now - timedelta(days=7)).isoformat()
+
+    # Certificate stats
+    total_certs = await db.certificates.count_documents({})
+    free_certs = await db.certificates.count_documents({'tier': 'free'})
+    paid_certs = await db.certificates.count_documents({'tier': 'paid'})
+    compliance_receipts = await db.certificates.count_documents({'receipt_type': 'tc_acknowledgment'})
+    certs_24h = await db.certificates.count_documents({'created_at': {'$gte': day_ago}})
+    certs_7d = await db.certificates.count_documents({'created_at': {'$gte': week_ago}})
+
+    # Severity distribution
+    severity_pipeline = [
+        {'$match': {'receipt_type': {'$ne': 'tc_acknowledgment'}}},
+        {'$group': {'_id': '$severity_class', 'count': {'$sum': 1}}},
+    ]
+    severity_raw = await db.certificates.aggregate(severity_pipeline).to_list(20)
+    severity_dist = {s['_id']: s['count'] for s in severity_raw if s['_id']}
+
+    # Revenue
+    revenue_pipeline = [
+        {'$match': {'tier': 'paid', 'payment_amount': {'$gt': 0}}},
+        {'$group': {
+            '_id': '$payment_method',
+            'revenue': {'$sum': '$payment_amount'},
+            'count': {'$sum': 1},
+        }},
+    ]
+    revenue_raw = await db.certificates.aggregate(revenue_pipeline).to_list(20)
+    revenue_by_method = [
+        {'method': r['_id'] or 'unknown', 'revenue': round(r['revenue'], 2), 'count': r['count']}
+        for r in revenue_raw
+    ]
+    total_revenue = round(sum(r['revenue'] for r in revenue_by_method), 2)
+
+    # Payment transactions
+    pending_payments = await db.payment_transactions.count_documents({'payment_status': 'unpaid'})
+    completed_payments = await db.payment_transactions.count_documents({'payment_status': 'paid'})
+
+    # Email stats
+    emails_scheduled = await db.scheduled_deliveries.count_documents({})
+    emails_sent = await db.scheduled_deliveries.count_documents({'sent': True, 'failed': {'$ne': True}})
+    emails_pending = await db.scheduled_deliveries.count_documents({'sent': False})
+    emails_failed = await db.scheduled_deliveries.count_documents({'failed': True})
+
+    # Email events (delivered / opened / clicked / bounced)
+    event_pipeline = [
+        {'$group': {'_id': '$event_type', 'count': {'$sum': 1}}},
+    ]
+    event_raw = await db.email_events.aggregate(event_pipeline).to_list(20)
+    email_events_by_type = {e['_id']: e['count'] for e in event_raw}
+
+    # Recent activity (last 10 certs)
+    recent = await db.certificates.find(
+        {},
+        {'_id': 0, 'registry_id': 1, 'name': 1, 'severity_class': 1, 'tier': 1,
+         'status': 1, 'payment_amount': 1, 'payment_method': 1, 'created_at': 1,
+         'receipt_type': 1, 'confession': 1},
+    ).sort('created_at', -1).limit(10).to_list(10)
+    for r in recent:
+        if r.get('confession'):
+            r['confession'] = r['confession'][:80] + ('...' if len(r['confession']) > 80 else '')
+
+    return {
+        'overview': {
+            'total_certificates': total_certs,
+            'free_certificates': free_certs,
+            'paid_certificates': paid_certs,
+            'compliance_receipts': compliance_receipts,
+            'conversion_rate': round((paid_certs / total_certs * 100) if total_certs else 0, 1),
+            'last_24h': certs_24h,
+            'last_7d': certs_7d,
+        },
+        'revenue': {
+            'total_usd': total_revenue,
+            'by_method': revenue_by_method,
+        },
+        'severity_distribution': severity_dist,
+        'payments': {
+            'pending': pending_payments,
+            'completed': completed_payments,
+        },
+        'emails': {
+            'scheduled': emails_scheduled,
+            'sent': emails_sent,
+            'pending': emails_pending,
+            'failed': emails_failed,
+            'events': email_events_by_type,
+        },
+        'recent_activity': recent,
+        'generated_at': now.isoformat(),
+    }
+
+
+@api_router.get("/admin/certificates")
+async def admin_certificates(key: str, limit: int = 50, skip: int = 0,
+                              tier: Optional[str] = None,
+                              severity: Optional[str] = None):
+    """Paginated certificate browser."""
+    require_admin(key)
+    query = {}
+    if tier:
+        query['tier'] = tier
+    if severity:
+        query['severity_class'] = severity
+    total = await db.certificates.count_documents(query)
+    certs = await db.certificates.find(
+        query,
+        {'_id': 0},
+    ).sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
+    return {'total': total, 'items': certs, 'skip': skip, 'limit': limit}
+
+
 # Include the router in the main app
 app.include_router(api_router)
 

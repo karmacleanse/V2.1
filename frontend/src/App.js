@@ -11,6 +11,7 @@ import SeverityResult from './pages/SeverityResult';
 import ProtocolSelection from './pages/ProtocolSelection';
 import CertificateView from './pages/CertificateView';
 import Terms from './pages/Terms';
+import AdminDashboard from './pages/AdminDashboard';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -482,6 +483,7 @@ function App() {
         <Route path="/" element={<Funnel />} />
         <Route path="/verify/:registryId" element={<VerificationPage />} />
         <Route path="/terms" element={<Terms />} />
+        <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </BrowserRouter>
   );
