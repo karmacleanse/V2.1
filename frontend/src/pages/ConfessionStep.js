@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import useRitualStore from '../store/ritualStore';
+import BackButton from '../components/BackButton';
 
 const placeholders = [
   'I ghosted someone.',
@@ -42,6 +43,9 @@ const ConfessionStep = () => {
       }}
       data-testid="confession-step"
     >
+      <div className="mb-4">
+        <BackButton to="identity" />
+      </div>
       <h2
         className="text-2xl sm:text-3xl font-bold uppercase mb-2"
         style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}

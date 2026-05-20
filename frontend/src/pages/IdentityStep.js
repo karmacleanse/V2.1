@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import useRitualStore from '../store/ritualStore';
+import BackButton from '../components/BackButton';
 
 const IdentityStep = () => {
   const [input, setInput] = useState('');
@@ -31,6 +32,9 @@ const IdentityStep = () => {
       }}
       data-testid="identity-step"
     >
+      <div className="mb-4">
+        <BackButton to="landing" />
+      </div>
       <h2
         className="text-2xl sm:text-3xl font-bold uppercase mb-2"
         style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}

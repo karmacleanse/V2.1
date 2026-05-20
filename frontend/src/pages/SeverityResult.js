@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import useRitualStore from '../store/ritualStore';
+import BackButton from '../components/BackButton';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -64,6 +65,9 @@ const SeverityResult = () => {
       }}
       data-testid="severity-result"
     >
+      <div className="mb-4">
+        <BackButton to="confession" />
+      </div>
       {/* Header */}
       <div className="mb-8 text-center">
         <h2

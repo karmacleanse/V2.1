@@ -15,9 +15,11 @@ const CertificateView = () => {
   const severity = useRitualStore((state) => state.severity);
   const tier = useRitualStore((state) => state.tier);
   const status = useRitualStore((state) => state.status);
+  const reset = useRitualStore((state) => state.reset);
   const [showDelivery, setShowDelivery] = useState(false);
   const [sketchUrl, setSketchUrl] = useState(null);
   const [sketchLoading, setSketchLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const verificationUrl = `${window.location.origin}/verify/${registryId}`;
 
@@ -53,17 +55,27 @@ const CertificateView = () => {
     }
   };
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: 'Karma Cleanse Certificate',
-        text: `Certificate ${registryId}`,
-        url: verificationUrl,
-      });
-    } else {
-      navigator.clipboard.writeText(verificationUrl);
-      alert('Link copied to clipboard!');
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(verificationUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error('Copy failed:', e);
     }
+  };
+
+  const shareText = `My Karma Cleanse certificate ${registryId} has been issued. Emotional bureaucracy works in mysterious ways.`;
+
+  const shareLinks = {
+    telegram: `https://t.me/share/url?url=${encodeURIComponent(verificationUrl)}&text=${encodeURIComponent(shareText)}`,
+    twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(verificationUrl)}&text=${encodeURIComponent(shareText)}`,
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(shareText + ' ' + verificationUrl)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(verificationUrl)}`,
+  };
+
+  const handleStartOver = () => {
+    reset();
   };
 
   if (!severity) return null;
@@ -309,10 +321,84 @@ const CertificateView = () => {
         </div>
       </div>
 
+      {/* Share Section */}
+      <div
+        className="border-2 p-4 mb-4"
+        style={{ background: '#FFFFFF', borderColor: '#0A0A0A' }}
+        data-testid="share-section"
+      >
+        <div
+          className="text-xs uppercase font-bold tracking-widest mb-3"
+          style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+        >
+          Share Certificate
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <a
+            href={shareLinks.telegram}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 py-2 px-3 font-bold uppercase text-xs border-2 transition-colors hover:opacity-80"
+            style={{
+              background: '#229ED9',
+              color: '#FFFFFF',
+              borderColor: '#229ED9',
+              fontFamily: 'Chivo, sans-serif',
+            }}
+            data-testid="share-telegram-btn"
+          >
+            Telegram
+          </a>
+          <a
+            href={shareLinks.twitter}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 py-2 px-3 font-bold uppercase text-xs border-2 transition-colors hover:opacity-80"
+            style={{
+              background: '#000000',
+              color: '#FFFFFF',
+              borderColor: '#000000',
+              fontFamily: 'Chivo, sans-serif',
+            }}
+            data-testid="share-twitter-btn"
+          >
+            X / Twitter
+          </a>
+          <a
+            href={shareLinks.whatsapp}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 py-2 px-3 font-bold uppercase text-xs border-2 transition-colors hover:opacity-80"
+            style={{
+              background: '#25D366',
+              color: '#FFFFFF',
+              borderColor: '#25D366',
+              fontFamily: 'Chivo, sans-serif',
+            }}
+            data-testid="share-whatsapp-btn"
+          >
+            WhatsApp
+          </a>
+          <button
+            onClick={handleCopyLink}
+            className="flex items-center justify-center gap-2 py-2 px-3 font-bold uppercase text-xs border-2 transition-colors hover:opacity-80"
+            style={{
+              background: copied ? '#15803D' : 'transparent',
+              color: copied ? '#FFFFFF' : '#0A0A0A',
+              borderColor: copied ? '#15803D' : '#0A0A0A',
+              fontFamily: 'Chivo, sans-serif',
+            }}
+            data-testid="share-copy-btn"
+          >
+            {copied ? 'Copied ✓' : 'Copy Link'}
+          </button>
+        </div>
+      </div>
+
       {/* Action Buttons */}
-      <div className="flex gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <button
-          onClick={handleShare}
+          onClick={() => setShowDelivery(!showDelivery)}
           className="flex-1 py-3 font-bold uppercase text-sm border-2 transition-colors"
           style={{
             background: '#0A0A0A',
@@ -320,12 +406,12 @@ const CertificateView = () => {
             borderColor: '#0A0A0A',
             fontFamily: 'Chivo, sans-serif',
           }}
-          data-testid="share-certificate-btn"
+          data-testid="schedule-delivery-btn"
         >
-          Share Certificate
+          {showDelivery ? 'Hide Delivery Form' : 'Schedule Email Delivery'}
         </button>
         <button
-          onClick={() => setShowDelivery(!showDelivery)}
+          onClick={handleStartOver}
           className="flex-1 py-3 font-bold uppercase text-sm border-2 transition-colors"
           style={{
             background: 'transparent',
@@ -333,9 +419,9 @@ const CertificateView = () => {
             borderColor: '#0A0A0A',
             fontFamily: 'Chivo, sans-serif',
           }}
-          data-testid="schedule-delivery-btn"
+          data-testid="start-over-btn"
         >
-          Schedule Delivery
+          ← Start New Ritual
         </button>
       </div>
 

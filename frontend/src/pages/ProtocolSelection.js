@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import useRitualStore from '../store/ritualStore';
+import BackButton from '../components/BackButton';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -124,6 +125,9 @@ const ProtocolSelection = () => {
       className="max-w-5xl w-full p-6"
       data-testid="protocol-selection"
     >
+      <div className="mb-4">
+        <BackButton to="severity" />
+      </div>
       <h2
         className="text-3xl sm:text-4xl font-bold uppercase mb-2 text-center"
         style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}
