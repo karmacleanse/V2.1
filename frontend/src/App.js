@@ -26,7 +26,7 @@ const Funnel = () => {
     const params = new URLSearchParams(location.search);
     const success = params.get('success');
     const polarSuccess = params.get('polar_success');
-    const nowpSuccess = params.get('nowp_success');
+    const cryptomusSuccess = params.get('cryptomus_success');
     const sessionId = params.get('session_id');
     const checkoutId = params.get('checkout_id');
     const certUuid = params.get('cert_uuid');
@@ -35,30 +35,28 @@ const Funnel = () => {
       pollPaymentStatus(sessionId);
     } else if (polarSuccess === 'true' && checkoutId) {
       pollPolarStatus(checkoutId);
-    } else if (nowpSuccess === 'true' && certUuid) {
-      pollNowpStatus(certUuid);
+    } else if (cryptomusSuccess === 'true' && certUuid) {
+      pollCryptomusStatus(certUuid);
     }
   }, [location]);
 
-  const pollNowpStatus = async (certUuid, attempts = 0) => {
-    const maxAttempts = 60; // ~10 min — crypto can take a while
+  const pollCryptomusStatus = async (certUuid, attempts = 0) => {
+    const maxAttempts = 60;
     if (attempts >= maxAttempts) {
       alert('Payment processing — check back in 10 minutes.');
       return;
     }
-
     try {
-      const response = await axios.get(`${API}/nowpayments/status/${certUuid}`);
-
+      const response = await axios.get(`${API}/cryptomus/status/${certUuid}`);
       if (response.data.is_paid) {
         setStep('certificate');
         navigate('/', { replace: true });
       } else {
-        setTimeout(() => pollNowpStatus(certUuid, attempts + 1), 10000);
+        setTimeout(() => pollCryptomusStatus(certUuid, attempts + 1), 10000);
       }
     } catch (error) {
-      console.error('NOWPayments poll error:', error);
-      setTimeout(() => pollNowpStatus(certUuid, attempts + 1), 10000);
+      console.error('Cryptomus poll error:', error);
+      setTimeout(() => pollCryptomusStatus(certUuid, attempts + 1), 10000);
     }
   };
 

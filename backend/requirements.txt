@@ -7,14 +7,18 @@ anyio==4.13.0
 ast_serialize==0.5.0
 attrs==26.1.0
 bcrypt==4.1.3
+bitarray==3.8.1
 black==26.5.1
 boto3==1.43.9
 botocore==1.43.9
 certifi==2026.4.22
 cffi==2.0.0
 charset-normalizer==3.4.7
+ckzg==2.1.7
 click==8.4.0
 cryptography==48.0.0
+cytoolz==1.1.0
+Deprecated==1.3.1
 distro==1.9.0
 dnspython==2.8.0
 ecdsa==0.19.2
@@ -37,6 +41,7 @@ googleapis-common-protos==1.75.0
 grpcio==1.80.0
 grpcio-status==1.71.2
 h11==0.16.0
+hexbytes==1.3.1
 hf-xet==1.5.0
 httpcore==1.0.9
 httplib2==0.31.2
@@ -50,6 +55,7 @@ Jinja2==3.1.6
 jiter==0.14.0
 jmespath==1.1.0
 jq==1.11.0
+jsonpath-python==1.1.6
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.11.0
@@ -72,6 +78,7 @@ pathspec==1.1.1
 pillow==12.2.0
 platformdirs==4.9.6
 pluggy==1.6.0
+polar-sdk==0.31.5
 propcache==0.5.2
 proto-plus==1.28.0
 protobuf==5.29.6
@@ -79,6 +86,7 @@ pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycodestyle==2.14.0
 pycparser==3.0
+pycryptodome==3.23.0
 pydantic==2.13.4
 pydantic_core==2.46.4
 pyflakes==3.4.0
@@ -92,6 +100,7 @@ python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.29
 pytokens==0.4.1
+pyunormalize==17.0.0
 PyYAML==6.0.3
 qrcode==8.2
 referencing==0.37.0
@@ -107,13 +116,18 @@ s5cmd==0.2.0
 shellingham==1.5.4
 six==1.17.0
 sniffio==1.3.1
+standardwebhooks==1.0.1
 starlette==0.37.2
 stripe==15.1.0
 tenacity==9.1.4
 tiktoken==0.13.0
 tokenizers==0.23.1
+toolz==1.1.0
 tqdm==4.67.3
 typer==0.25.1
+types-Deprecated==1.3.1.20260519
+types-python-dateutil==2.9.0.20260518
+types-requests==2.33.0.20260518
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2026.2
@@ -121,6 +135,7 @@ uritemplate==4.2.0
 urllib3==2.7.0
 uvicorn==0.25.0
 watchfiles==1.2.0
-websockets==16.0
+websockets==15.0.1
+wrapt==2.1.2
 yarl==1.23.0
 zipp==4.1.0
