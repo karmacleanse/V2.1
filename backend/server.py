@@ -414,6 +414,26 @@ async def polar_status(checkout_id: str):
     }
 
 
+@api_router.get("/payment/status/{cert_uuid}")
+async def payment_status(cert_uuid: str):
+    """
+    Unified payment status check by certificate UUID.
+    Works for ANY provider (Polar, Plisio): if the webhook upgraded the cert
+    to `paid`, this endpoint returns is_paid=true, even if the corresponding
+    transaction record wasn't matched.
+    """
+    cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+
+    return {
+        'tier': cert.get('tier', 'free'),
+        'status': cert.get('status', 'temporary'),
+        'is_paid': cert.get('tier') == 'paid',
+        'payment_method': cert.get('payment_method'),
+    }
+
+
 @api_router.post("/webhooks/polar")
 async def polar_webhook(request: Request):
     """Handle Polar webhook events (order.paid, etc.)"""

@@ -28,13 +28,15 @@ const Funnel = () => {
     const params = new URLSearchParams(location.search);
     const polarSuccess = params.get('polar_success');
     const plisioSuccess = params.get('plisio_success');
-    const checkoutId = params.get('checkout_id');
     const certUuid = params.get('cert_uuid');
 
-    if (polarSuccess === 'true' && checkoutId) {
-      pollPolarStatus(checkoutId);
-    } else if (plisioSuccess === 'true' && certUuid) {
-      pollPlisioStatus(certUuid);
+    if (polarSuccess === 'true') {
+      // Prefer cert_uuid from URL; fall back to persisted store value
+      const uuid = certUuid || useRitualStore.getState().certificateUuid;
+      if (uuid) pollPaymentByCert(uuid, 'polar');
+    } else if (plisioSuccess === 'true') {
+      const uuid = certUuid || useRitualStore.getState().certificateUuid;
+      if (uuid) pollPaymentByCert(uuid, 'plisio');
     }
   }, [location]);
 
@@ -42,45 +44,24 @@ const Funnel = () => {
   const POLL_MAX = 60;
   const POLL_INTERVAL = 5000;
 
-  const pollPlisioStatus = async (certUuid, attempts = 0) => {
-    setPollingState({ provider: 'plisio', attempt: attempts + 1, max: POLL_MAX });
+  const pollPaymentByCert = async (certUuid, provider, attempts = 0) => {
+    setPollingState({ provider, attempt: attempts + 1, max: POLL_MAX });
     if (attempts >= POLL_MAX) {
-      setPollingState({ provider: 'plisio', timedOut: true });
+      setPollingState({ provider, timedOut: true });
       return;
     }
     try {
-      const response = await axios.get(`${API}/plisio/status/${certUuid}`);
+      const response = await axios.get(`${API}/payment/status/${certUuid}`);
       if (response.data.is_paid) {
         setPollingState(null);
         setStep('certificate');
         navigate('/', { replace: true });
       } else {
-        setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), POLL_INTERVAL);
+        setTimeout(() => pollPaymentByCert(certUuid, provider, attempts + 1), POLL_INTERVAL);
       }
     } catch (error) {
-      console.error('Plisio poll error:', error);
-      setTimeout(() => pollPlisioStatus(certUuid, attempts + 1), POLL_INTERVAL);
-    }
-  };
-
-  const pollPolarStatus = async (checkoutId, attempts = 0) => {
-    setPollingState({ provider: 'polar', attempt: attempts + 1, max: POLL_MAX });
-    if (attempts >= POLL_MAX) {
-      setPollingState({ provider: 'polar', timedOut: true });
-      return;
-    }
-    try {
-      const response = await axios.get(`${API}/polar/status/${checkoutId}`);
-      if (response.data.payment_status === 'paid') {
-        setPollingState(null);
-        setStep('certificate');
-        navigate('/', { replace: true });
-      } else {
-        setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), POLL_INTERVAL);
-      }
-    } catch (error) {
-      console.error('Polar poll error:', error);
-      setTimeout(() => pollPolarStatus(checkoutId, attempts + 1), POLL_INTERVAL);
+      console.error(`${provider} poll error:`, error);
+      setTimeout(() => pollPaymentByCert(certUuid, provider, attempts + 1), POLL_INTERVAL);
     }
   };
 

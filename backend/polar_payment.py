@@ -53,7 +53,7 @@ async def create_polar_checkout(tier: str, certificate_uuid: str, origin_url: st
     
     polar = get_polar_client()
     
-    success_url = f"{origin_url}/?polar_success=true&checkout_id={{CHECKOUT_ID}}"
+    success_url = f"{origin_url}/?polar_success=true&cert_uuid={certificate_uuid}"
     
     try:
         checkout = polar.checkouts.create(request={
