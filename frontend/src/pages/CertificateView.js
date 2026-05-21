@@ -103,23 +103,28 @@ const CertificateView = () => {
     }
   };
 
+  const shareText = `My Karma Cleanse certificate ${registryId} has been issued. Emotional bureaucracy works in mysterious ways.`;
+
+  // Use backend /api/share/{id} URL — it returns HTML with OG meta tags +
+  // auto-redirects real users to /verify/{id}. Social media scrapers get a
+  // proper preview card with cert image; humans land on the React verification page.
+  const shareUrl = `${window.location.origin}/api/share/${registryId}`;
+
+  const shareLinks = {
+    telegram: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`,
+    twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(shareText)}`,
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+  };
+
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(verificationUrl);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       console.error('Copy failed:', e);
     }
-  };
-
-  const shareText = `My Karma Cleanse certificate ${registryId} has been issued. Emotional bureaucracy works in mysterious ways.`;
-
-  const shareLinks = {
-    telegram: `https://t.me/share/url?url=${encodeURIComponent(verificationUrl)}&text=${encodeURIComponent(shareText)}`,
-    twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(verificationUrl)}&text=${encodeURIComponent(shareText)}`,
-    whatsapp: `https://wa.me/?text=${encodeURIComponent(shareText + ' ' + verificationUrl)}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(verificationUrl)}`,
   };
 
   const handleStartOver = () => {

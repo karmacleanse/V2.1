@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Header, Response
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -29,6 +30,7 @@ from plisio_client import (
     PLISIO_PRICING,
 )
 from sketch_generator import generate_sketch
+from og_generator import generate_og_image, build_share_html
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse
 )
@@ -195,6 +197,50 @@ async def verify_certificate(registry_id: str):
         raise HTTPException(status_code=404, detail="Certificate not found in registry")
     
     return cert
+
+
+@api_router.get("/og/{registry_id}.png")
+async def og_image(registry_id: str):
+    """Dynamic Open Graph PNG (1200x630) for social sharing."""
+    cert = await db.certificates.find_one({'registry_id': registry_id}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    try:
+        png = generate_og_image(cert)
+    except Exception as e:
+        logger.error(f"OG image generation failed: {e}")
+        raise HTTPException(status_code=500, detail="OG image generation failed")
+    
+    return Response(
+        content=png,
+        media_type='image/png',
+        headers={
+            'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+        },
+    )
+
+
+@api_router.get("/share/{registry_id}", response_class=HTMLResponse)
+async def share_page(registry_id: str, request: Request):
+    """
+    HTML page with Open Graph meta tags for social media scrapers.
+    Real browsers are redirected to the React verification page.
+    """
+    cert = await db.certificates.find_one({'registry_id': registry_id}, {'_id': 0})
+    if not cert:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    # Use the public origin (host header) to build absolute URLs
+    proto = request.headers.get('x-forwarded-proto', 'https')
+    host = request.headers.get('host', request.url.netloc)
+    base = f"{proto}://{host}"
+    
+    image_url = f"{base}/api/og/{registry_id}.png"
+    app_url = f"{base}/verify/{registry_id}"
+    
+    html = build_share_html(cert, image_url, app_url)
+    return HTMLResponse(content=html)
 
 
 @api_router.post("/checkout/session")
