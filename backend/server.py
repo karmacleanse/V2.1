@@ -535,6 +535,7 @@ async def reconcile_payment(req: ReconcileRequest):
                 }}
             )
             logger.info(f"Reconciled cert {req.certificate_uuid} via Polar API check")
+            asyncio.create_task(_auto_generate_sketch(req.certificate_uuid))
             return {'is_paid': True, 'message': 'Payment confirmed via Polar API', 'cert_uuid': req.certificate_uuid}
         
         return {'is_paid': False, 'status': status, 'message': 'Polar reports checkout not yet paid'}
@@ -616,6 +617,8 @@ async def polar_webhook(request: Request):
                     }}
                 )
                 logger.info(f"Certificate {cert_uuid} upgraded via Polar webhook (matched={result.matched_count})")
+                # Trigger AI sketch generation asynchronously (don't block webhook response)
+                asyncio.create_task(_auto_generate_sketch(cert_uuid))
             else:
                 logger.info(f"Certificate {cert_uuid} already tier={cert.get('tier')}, skipping upgrade")
             
@@ -635,11 +638,21 @@ async def polar_webhook(request: Request):
 
 
 
+class PlisioInvoiceRequest(BaseModel):
+    tier: Optional[str] = None
+    certificate_uuid: str
+    origin_url: str
+    custom_amount: Optional[float] = None  # self-assessed karmic compensation
+
+
 @api_router.post("/plisio/invoice")
-async def plisio_invoice_endpoint(request: CheckoutRequest):
-    """Create Plisio crypto invoice (BTC, LTC, USDT TRC/BEP, TRX, TON, DOGE etc.)"""
-    if request.tier not in PLISIO_PRICING:
-        raise HTTPException(status_code=400, detail="Invalid tier")
+async def plisio_invoice_endpoint(request: PlisioInvoiceRequest):
+    """Create Plisio crypto invoice (any severity tier OR custom amount)."""
+    if request.custom_amount is None and request.tier not in PLISIO_PRICING:
+        raise HTTPException(status_code=400, detail="Invalid tier or custom_amount required")
+    if request.custom_amount is not None:
+        if request.custom_amount < 0.50 or request.custom_amount > 1000:
+            raise HTTPException(status_code=400, detail="Custom amount must be between $0.50 and $1000")
     
     cert = await db.certificates.find_one({'uuid': request.certificate_uuid}, {'_id': 0})
     if not cert:
@@ -647,10 +660,11 @@ async def plisio_invoice_endpoint(request: CheckoutRequest):
     
     try:
         result = await plisio_create_invoice(
-            tier=request.tier,
+            tier=request.tier or 'standard',
             certificate_uuid=request.certificate_uuid,
             origin_url=request.origin_url,
             backend_url=BASE_URL,
+            custom_amount=request.custom_amount,
         )
         
         transaction = {
@@ -660,7 +674,7 @@ async def plisio_invoice_endpoint(request: CheckoutRequest):
             'certificate_uuid': request.certificate_uuid,
             'amount': result['amount_usd'],
             'currency': 'usd',
-            'tier': request.tier,
+            'tier': request.tier or 'custom',
             'payment_method': 'plisio',
             'status': 'pending',
             'payment_status': 'unpaid',
@@ -668,7 +682,7 @@ async def plisio_invoice_endpoint(request: CheckoutRequest):
         }
         await db.payment_transactions.insert_one(transaction)
         
-        logger.info(f"Plisio invoice {result['txn_id']} for cert {request.certificate_uuid}")
+        logger.info(f"Plisio invoice {result['txn_id']} for cert {request.certificate_uuid} amount=${result['amount_usd']}")
         return {'url': result['url'], 'txn_id': result['txn_id']}
         
     except Exception as e:
@@ -757,6 +771,8 @@ async def plisio_webhook(request: Request):
                 }}
             )
             logger.info(f"Certificate {cert_uuid} upgraded via Plisio ({paid_currency})")
+            # Trigger AI sketch generation asynchronously
+            asyncio.create_task(_auto_generate_sketch(cert_uuid))
     
     return {'received': True}
 
@@ -802,6 +818,36 @@ async def generate_sketch_endpoint(cert_uuid: str):
     return {'sketch_url': result['url'], 'cached': False}
 
 
+async def _auto_generate_sketch(cert_uuid: str):
+    """
+    Background task: generates AI sketch right after a cert is upgraded to paid.
+    Idempotent — exits early if sketch already exists.
+    """
+    try:
+        cert = await db.certificates.find_one({'uuid': cert_uuid}, {'_id': 0})
+        if not cert or cert.get('tier') != 'paid' or cert.get('sketch_url'):
+            return
+        logger.info(f"[auto-sketch] Generating sketch for {cert_uuid}")
+        result = await generate_sketch(
+            severity_class=cert.get('severity_class', 'Moderate'),
+            confession=cert.get('confession', ''),
+        )
+        if result.get('error'):
+            logger.error(f"[auto-sketch] failed for {cert_uuid}: {result['error']}")
+            return
+        await db.certificates.update_one(
+            {'uuid': cert_uuid},
+            {'$set': {
+                'sketch_url': result['url'],
+                'sketch_prompt': result.get('prompt'),
+                'sketch_seed': result.get('seed'),
+            }}
+        )
+        logger.info(f"[auto-sketch] saved {result['url']} for {cert_uuid}")
+    except Exception as e:
+        logger.error(f"[auto-sketch] exception for {cert_uuid}: {e}")
+
+
 @api_router.post("/delivery/schedule")
 async def schedule_delivery(delivery: DeliveryRequest):
     """Schedule email delivery of certificate"""
@@ -810,6 +856,13 @@ async def schedule_delivery(delivery: DeliveryRequest):
     cert = await db.certificates.find_one({'uuid': delivery.certificate_uuid}, {'_id': 0})
     if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    # Scheduled delivery is a Premium-only feature
+    if cert.get('tier') != 'paid':
+        raise HTTPException(
+            status_code=402,
+            detail="Scheduled delivery requires a Premium certificate. Upgrade to enable.",
+        )
     
     # Calculate send time
     send_at = datetime.now(timezone.utc) + timedelta(hours=delivery.delay_hours)
@@ -968,6 +1021,11 @@ async def send_certificate_email_now(req: SendNowRequest):
     cert = await db.certificates.find_one({'uuid': req.certificate_uuid}, {'_id': 0})
     if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found")
+    if cert.get('tier') != 'paid':
+        raise HTTPException(
+            status_code=402,
+            detail="Email delivery requires a Premium certificate.",
+        )
     try:
         result = await _send_certificate_email_via_resend(cert, req.recipient_email, req.message)
         logger.info(f"Email sent to {req.recipient_email}, id={result.get('id')}")

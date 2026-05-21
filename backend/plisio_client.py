@@ -36,25 +36,37 @@ PLISIO_PRICING = {
 
 async def create_invoice(tier: str, certificate_uuid: str,
                          origin_url: str, backend_url: str,
-                         email: str = None) -> dict:
+                         email: str = None,
+                         custom_amount: float = None) -> dict:
     """
     Create a Plisio invoice with hosted checkout.
     Returns: {url, txn_id, order_id, amount_usd}
+    
+    If `custom_amount` is provided, it overrides the tier-based price.
+    Used for self-assessed karmic compensation (any amount).
     """
-    if tier not in PLISIO_PRICING:
-        raise ValueError(f"Invalid tier: {tier}")
     if not PLISIO_API_KEY:
         raise ValueError("PLISIO_API_KEY not configured")
 
-    amount = PLISIO_PRICING[tier]
+    if custom_amount is not None:
+        if custom_amount < 0.50 or custom_amount > 1000:
+            raise ValueError(f"Custom amount must be between $0.50 and $1000")
+        amount = round(custom_amount, 2)
+        tier_label = 'custom'
+    else:
+        if tier not in PLISIO_PRICING:
+            raise ValueError(f"Invalid tier: {tier}")
+        amount = PLISIO_PRICING[tier]
+        tier_label = tier
+    
     # Unique order number per attempt (allows retry on same cert)
-    order_number = f"{certificate_uuid}_{tier}_{uuid.uuid4().hex[:8]}"
+    order_number = f"{certificate_uuid}_{tier_label}_{uuid.uuid4().hex[:8]}"
 
     params = {
         'source_currency': 'USD',
         'source_amount': f"{amount:.2f}",
         'order_number': order_number,
-        'order_name': f"Karma Cleanse — {tier.capitalize()} Protocol",
+        'order_name': f"Karma Cleanse \u2014 Premium Absolution (${amount:.2f})",
         'callback_url': f"{backend_url}/api/webhooks/plisio?json=true",
         'success_callback_url': f"{origin_url}/?plisio_success=true&cert_uuid={certificate_uuid}",
         'fail_callback_url': f"{origin_url}/?plisio_cancel=true",
