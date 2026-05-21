@@ -193,6 +193,18 @@ async def get_certificate(cert_uuid: str):
     return cert
 
 
+@api_router.get("/recent")
+async def recent_certificates(limit: int = 3):
+    """Public: returns the most recent anonymized certs for social proof."""
+    if limit < 1 or limit > 10:
+        limit = 3
+    certs = await db.certificates.find(
+        {'receipt_type': {'$ne': 'tc_acknowledgment'}},
+        {'_id': 0, 'registry_id': 1, 'severity_class': 1, 'tier': 1, 'created_at': 1},
+    ).sort('created_at', -1).limit(limit).to_list(limit)
+    return {'items': certs}
+
+
 @api_router.get("/verify/{registry_id}")
 async def verify_certificate(registry_id: str):
     """Verify certificate by registry ID (public)"""
