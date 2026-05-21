@@ -52,7 +52,12 @@ SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
 resend.api_key = RESEND_API_KEY
 
 # Base URL
-BASE_URL = os.environ.get('BASE_URL', 'http://localhost:3000')
+# PUBLIC_BASE_URL (production override) wins over BASE_URL when set.
+# BASE_URL is used for webhook callbacks; PUBLIC_BASE_URL for user-facing links.
+BASE_URL = (
+    os.environ.get('PUBLIC_BASE_URL')
+    or os.environ.get('BASE_URL', 'http://localhost:3000')
+).rstrip('/')
 
 # Create the main app without a prefix
 app = FastAPI()
