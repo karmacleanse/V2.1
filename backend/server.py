@@ -231,10 +231,24 @@ async def share_page(registry_id: str, request: Request):
     if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found")
     
-    # Use the public origin (host header) to build absolute URLs
-    proto = request.headers.get('x-forwarded-proto', 'https')
-    host = request.headers.get('host', request.url.netloc)
-    base = f"{proto}://{host}"
+    # Build absolute URLs using the PUBLIC domain, not the internal proxy host.
+    # Priority:
+    #   1. PUBLIC_BASE_URL env (production override, e.g. https://karmacleanse.online)
+    #   2. X-Forwarded-Host (Cloudflare / ingress proxies set this)
+    #   3. Host header (local/preview)
+    public_base = os.environ.get('PUBLIC_BASE_URL', '').rstrip('/')
+    if public_base:
+        base = public_base
+    else:
+        proto = request.headers.get('x-forwarded-proto', 'https')
+        host = (
+            request.headers.get('x-forwarded-host')
+            or request.headers.get('host')
+            or request.url.netloc
+        )
+        # Take only the first host if X-Forwarded-Host contains a list
+        host = host.split(',')[0].strip()
+        base = f"{proto}://{host}"
     
     image_url = f"{base}/api/og/{registry_id}.png"
     app_url = f"{base}/verify/{registry_id}"
