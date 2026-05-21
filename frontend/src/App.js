@@ -470,6 +470,54 @@ const VerificationPage = () => {
           <br />
           Emotional bureaucracy since 2026.
         </p>
+
+        {/* CTA — invite viewer to cleanse their own karma */}
+        <div
+          className="mt-8 pt-6 border-t-2 text-center"
+          style={{ borderColor: '#0A0A0A' }}
+          data-testid="verification-cta-section"
+        >
+          <div
+            className="text-xs uppercase font-bold tracking-widest mb-2"
+            style={{ color: '#737373', fontFamily: 'IBM Plex Mono, monospace' }}
+          >
+            Have something on your conscience?
+          </div>
+          <h3
+            className="text-2xl sm:text-3xl font-black uppercase tracking-tight mb-1"
+            style={{ fontFamily: 'Chivo, sans-serif', color: '#0A0A0A' }}
+          >
+            Cleanse Your Own Karma
+          </h3>
+          <p
+            className="text-sm font-mono mb-5 max-w-md mx-auto"
+            style={{ color: '#525252' }}
+          >
+            Confess one incident. Receive an official certificate of absolution.
+            Symbolic. Bureaucratic. Slightly absurd.
+          </p>
+          <a
+            href="/"
+            className="inline-block py-3 px-8 font-bold uppercase text-sm border-2 transition-colors hover:opacity-80"
+            style={{
+              background: '#0A0A0A',
+              color: '#F4F4F0',
+              borderColor: '#0A0A0A',
+              fontFamily: 'Chivo, sans-serif',
+            }}
+            data-testid="verification-cta-btn"
+          >
+            Begin Cleansing Ritual \u2192
+          </a>
+          <div
+            className="text-xs font-mono mt-4"
+            style={{ color: '#737373' }}
+          >
+            <a href="/" className="underline hover:no-underline">
+              karmacleanse.online
+            </a>
+          </div>
+        </div>
         </div>
       </div>
     </div>

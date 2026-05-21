@@ -1,15 +1,18 @@
 """
 Open Graph image generator for Karma Cleanse certificates.
 Produces a 1200x630 PNG with brutalist-style cert preview for social sharing.
+
+Design priorities:
+- Readable at thumbnail size (Twitter Card displays ~600x315 in feed)
+- High contrast, BIG fonts, minimal clutter
+- Brand recognition at a glance: KARMA CLEANSE + severity badge + registry ID
 """
 import io
 import logging
-from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
-# Fonts (Liberation is pre-installed; falls back to default if missing)
 FONT_PATH_BOLD = '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'
 FONT_PATH_REGULAR = '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'
 FONT_PATH_MONO = '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf'
@@ -19,13 +22,13 @@ OG_WIDTH = 1200
 OG_HEIGHT = 630
 
 # Brutalist palette
-BG = (244, 244, 240)     # F4F4F0
-INK = (10, 10, 10)        # 0A0A0A
-MUTED = (115, 115, 115)   # 737373
-ACCENT_LOW = (21, 128, 61)        # green
-ACCENT_MODERATE = (82, 82, 82)    # neutral grey
-ACCENT_HIGH = (180, 83, 9)        # amber
-ACCENT_CRITICAL = (217, 45, 32)   # red
+BG = (244, 244, 240)
+INK = (10, 10, 10)
+MUTED = (115, 115, 115)
+ACCENT_LOW = (21, 128, 61)
+ACCENT_MODERATE = (82, 82, 82)
+ACCENT_HIGH = (180, 83, 9)
+ACCENT_CRITICAL = (217, 45, 32)
 ACCENT_COMPLIANCE = (21, 128, 61)
 
 
@@ -49,127 +52,109 @@ def _load(path: str, size: int):
 def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
-    return text[:max_chars - 1].rstrip() + '…'
+    return text[:max_chars - 1].rstrip() + '\u2026'
 
 
 def generate_og_image(cert: dict) -> bytes:
-    """Generate a 1200x630 PNG preview of the certificate. Returns bytes."""
+    """Generate a 1200x630 PNG. Optimized for thumbnail readability."""
     img = Image.new('RGB', (OG_WIDTH, OG_HEIGHT), BG)
     draw = ImageDraw.Draw(img)
     
-    # White card with thick black border
-    card_margin = 32
-    card = (card_margin, card_margin, OG_WIDTH - card_margin, OG_HEIGHT - card_margin)
-    draw.rectangle(card, fill=(255, 255, 255), outline=INK, width=4)
-    
-    pad = 50
-    inner_left = card[0] + pad
-    inner_right = card[2] - pad
-    y = card[1] + pad
-    
-    # Header: KARMA CLEANSE
-    font_header = _load(FONT_PATH_BOLD, 36)
-    draw.text((inner_left, y), 'KARMA CLEANSE', font=font_header, fill=INK)
-    
-    # Subtitle small mono right-aligned
-    font_micro = _load(FONT_PATH_MONO, 14)
-    subtitle = 'OFFICIAL CERTIFICATE V2.1'
-    bbox = draw.textbbox((0, 0), subtitle, font=font_micro)
-    draw.text((inner_right - (bbox[2] - bbox[0]), y + 8), subtitle, font=font_micro, fill=MUTED)
-    
-    y += 60
-    # Thin divider
-    draw.line([(inner_left, y), (inner_right, y)], fill=INK, width=2)
-    y += 30
-    
-    # Severity stamp (top-left of body area)
     severity = cert.get('severity_class', 'Low')
     sev_color = _color_for(severity)
     is_compliance = cert.get('receipt_type') == 'tc_acknowledgment'
-    stamp_text = f'CLASS {severity.upper()}'
-    font_stamp = _load(FONT_PATH_BOLD, 22)
-    stamp_bbox = draw.textbbox((0, 0), stamp_text, font=font_stamp)
-    stamp_w = stamp_bbox[2] - stamp_bbox[0]
-    stamp_h = stamp_bbox[3] - stamp_bbox[1]
-    sx, sy = inner_left, y
+    
+    # Card with thick black border
+    margin = 28
+    card = (margin, margin, OG_WIDTH - margin, OG_HEIGHT - margin)
+    draw.rectangle(card, fill=(255, 255, 255), outline=INK, width=6)
+    
+    # Severity-colored top band (visual cue at thumbnail size)
+    band_height = 84
     draw.rectangle(
-        (sx - 14, sy - 8, sx + stamp_w + 14, sy + stamp_h + 12),
-        outline=sev_color, width=4,
+        (card[0], card[1], card[2], card[1] + band_height),
+        fill=sev_color,
     )
-    draw.text((sx, sy), stamp_text, font=font_stamp, fill=sev_color)
     
-    # ACKNOWLEDGED / VERIFIED label (right side)
-    label = 'ACKNOWLEDGED' if is_compliance else 'VERIFIED'
-    label_color = ACCENT_LOW
-    font_label = _load(FONT_PATH_BOLD, 22)
-    lbbox = draw.textbbox((0, 0), label, font=font_label)
-    lw = lbbox[2] - lbbox[0]
-    lh = lbbox[3] - lbbox[1]
-    lx = inner_right - lw - 14
-    draw.rectangle(
-        (lx - 14, sy - 8, lx + lw + 14, sy + lh + 12),
-        outline=label_color, width=4,
-    )
-    draw.text((lx, sy), label, font=font_label, fill=label_color)
-    
-    y += 70
-    
-    # Registry ID — big
-    font_reg_label = _load(FONT_PATH_MONO_BOLD, 14)
-    draw.text((inner_left, y), 'REGISTRY ID', font=font_reg_label, fill=MUTED)
-    y += 22
-    font_reg = _load(FONT_PATH_BOLD, 56)
-    reg_id = cert.get('registry_id', 'KR-2026-XXXXXX')
-    draw.text((inner_left, y), reg_id, font=font_reg, fill=INK)
-    y += 78
-    
-    # Two-column: Subject | Classification (if not compliance)
-    col_w = (inner_right - inner_left) // 2 - 20
-    
-    # Subject (left)
-    draw.text((inner_left, y), 'SUBJECT', font=font_reg_label, fill=MUTED)
-    name = cert.get('name') or 'Anonymous Entity'
-    font_field = _load(FONT_PATH_MONO_BOLD, 24)
-    draw.text((inner_left, y + 22), _truncate(name, 28), font=font_field, fill=INK)
-    
-    # Right column varies by cert type
-    rx = inner_left + col_w + 40
-    if is_compliance:
-        draw.text((rx, y), 'JURISDICTION', font=font_reg_label, fill=MUTED)
-        jur = cert.get('jurisdiction') or 'Unspecified'
-        draw.text((rx, y + 22), _truncate(jur, 28), font=font_field, fill=INK)
-    else:
-        draw.text((rx, y), 'RISK SCORE', font=font_reg_label, fill=MUTED)
-        risk = cert.get('risk_score', 0)
-        draw.text((rx, y + 22), f'{risk}/100', font=font_field, fill=INK)
-    
-    y += 80
-    
-    # Protocol
-    draw.text((inner_left, y), 'PROTOCOL APPLIED', font=font_reg_label, fill=MUTED)
-    y += 22
-    protocol = cert.get('protocol', 'Standard Absolution Protocol')
-    font_proto = _load(FONT_PATH_MONO, 18)
-    draw.text((inner_left, y), _truncate(protocol, 72), font=font_proto, fill=INK)
-    
-    y += 60
-    # Bottom divider
-    draw.line([(inner_left, y), (inner_right, y)], fill=INK, width=2)
-    y += 20
-    
-    # Footer line — verification + tagline
-    font_footer = _load(FONT_PATH_MONO, 14)
-    tier = (cert.get('tier') or 'free').upper()
-    status = (cert.get('status') or 'Issued').upper()
-    footer_left = f'{tier} TIER · {status}'
-    footer_right = 'karmacleanse.online'
-    draw.text((inner_left, y), footer_left, font=font_footer, fill=MUTED)
-    bb = draw.textbbox((0, 0), footer_right, font=font_footer)
+    # KARMA CLEANSE — large, white on color band
+    font_brand = _load(FONT_PATH_BOLD, 56)
     draw.text(
-        (inner_right - (bb[2] - bb[0]), y),
-        footer_right,
-        font=font_footer,
-        fill=MUTED,
+        (card[0] + 30, card[1] + 14),
+        'KARMA CLEANSE',
+        font=font_brand,
+        fill=(255, 255, 255),
+    )
+    
+    # Severity word on right of band
+    font_band_right = _load(FONT_PATH_BOLD, 36)
+    if is_compliance:
+        right_text = 'COMPLIANCE'
+    else:
+        right_text = f'CLASS {severity.upper()}'
+    bbox = draw.textbbox((0, 0), right_text, font=font_band_right)
+    rw = bbox[2] - bbox[0]
+    draw.text(
+        (card[2] - 30 - rw, card[1] + 24),
+        right_text,
+        font=font_band_right,
+        fill=(255, 255, 255),
+    )
+    
+    # Content area
+    inner_left = card[0] + 50
+    inner_right = card[2] - 50
+    y = card[1] + band_height + 50
+    
+    # REGISTRY ID label
+    font_label = _load(FONT_PATH_MONO_BOLD, 20)
+    draw.text((inner_left, y), 'REGISTRY ID', font=font_label, fill=MUTED)
+    y += 32
+    
+    # Registry ID — huge
+    font_reg = _load(FONT_PATH_BOLD, 92)
+    reg_id = cert.get('registry_id', 'KR-XXXX-XXX')
+    draw.text((inner_left, y), reg_id, font=font_reg, fill=INK)
+    y += 110
+    
+    # SUBJECT
+    draw.text((inner_left, y), 'SUBJECT', font=font_label, fill=MUTED)
+    y += 28
+    font_field_big = _load(FONT_PATH_MONO_BOLD, 38)
+    name = cert.get('name') or 'Anonymous Entity'
+    draw.text((inner_left, y), _truncate(name, 32), font=font_field_big, fill=INK)
+    y += 52
+    
+    # Risk / Jurisdiction — big, single line, no clutter
+    if is_compliance:
+        sub_text = f"Jurisdiction: {cert.get('jurisdiction', 'Unspecified')}"
+    else:
+        risk = cert.get('risk_score', 0)
+        sub_text = f'Risk Score: {risk}/100'
+    font_sub = _load(FONT_PATH_MONO_BOLD, 34)
+    draw.text((inner_left, y), _truncate(sub_text, 40), font=font_sub, fill=INK)
+    y += 60
+    
+    # Bottom CTA — big, hard to miss
+    cta_y = card[3] - 80
+    draw.line([(inner_left, cta_y - 24), (inner_right, cta_y - 24)],
+              fill=INK, width=4)
+    
+    font_cta_left = _load(FONT_PATH_BOLD, 44)
+    draw.text(
+        (inner_left, cta_y),
+        'karmacleanse.online',
+        font=font_cta_left,
+        fill=INK,
+    )
+    
+    font_cta_right = _load(FONT_PATH_BOLD, 32)
+    right = 'CLEANSE YOUR KARMA \u2192'
+    rbb = draw.textbbox((0, 0), right, font=font_cta_right)
+    draw.text(
+        (inner_right - (rbb[2] - rbb[0]), cta_y + 8),
+        right,
+        font=font_cta_right,
+        fill=sev_color,
     )
     
     buf = io.BytesIO()
@@ -183,23 +168,20 @@ def build_share_html(cert: dict, image_url: str, app_url: str) -> str:
     is_compliance = cert.get('receipt_type') == 'tc_acknowledgment'
     
     if is_compliance:
-        title = f'Karma Cleanse — Compliance Receipt {registry_id}'
+        title = f'Karma Cleanse \u2014 Compliance Receipt {registry_id}'
         description = (
-            f"{cert.get('name', 'Anonymous')} has procedurally acknowledged "
-            f"Karma Cleanse Operational Terms. Filed in triplicate. "
-            f"Jurisdiction: {cert.get('jurisdiction', 'Unspecified')}."
+            f"{cert.get('name', 'Anonymous')} procedurally acknowledged the "
+            f"Karma Cleanse Operational Terms. Filed in triplicate."
         )
     else:
         severity = cert.get('severity_class', 'Low')
-        title = f'Karma Cleanse — {severity} Class · {registry_id}'
+        title = f'Karma Cleanse \u2014 Class {severity} \u00b7 {registry_id}'
         description = (
-            f"{cert.get('name', 'Anonymous')} has been issued an official "
-            f"Karma Cleanse certificate. Severity: {severity}. "
-            f"Risk Score: {cert.get('risk_score', 0)}/100. "
-            f"Emotional bureaucracy since 2026."
+            f"{cert.get('name', 'Anonymous')} has been issued a karma cleanse "
+            f"certificate. Class: {severity}. Risk Score: {cert.get('risk_score', 0)}/100. "
+            f"Cleanse your own karma at karmacleanse.online."
         )
     
-    # Escape minimally for HTML attributes
     def esc(s: str) -> str:
         return (s.replace('&', '&amp;').replace('"', '&quot;')
                  .replace('<', '&lt;').replace('>', '&gt;'))
@@ -240,7 +222,7 @@ a{{color:#0A0A0A}}
 </head>
 <body>
 <h1>Karma Cleanse</h1>
-<p>Loading certificate {esc(registry_id)}...</p>
+<p>Loading certificate {esc(registry_id)}\u2026</p>
 <p><a href="{app_e}">Continue to the certificate</a></p>
 <script>window.location.replace("{app_e}");</script>
 </body>
